@@ -1,3 +1,9 @@
+use rustpython_vm::{builtins::PyModule, PyRef, VirtualMachine};
+
+pub fn make_module(vm: &VirtualMachine) -> PyRef<PyModule> {
+    rustpython_ndarray::make_module(vm)
+}
+
 #[rustpython_vm::pymodule]
 pub mod rustpython_ndarray {
     use ndarray::ArrayD;
