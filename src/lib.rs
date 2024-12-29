@@ -6,6 +6,9 @@ pub fn make_module(vm: &VirtualMachine) -> PyRef<PyModule> {
 
 #[rustpython_vm::pymodule]
 pub mod rustpython_ndarray {
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
     use ndarray::ArrayD;
     use rustpython_vm::builtins::{PyBaseExceptionRef, PyList, PyListRef, PyStrRef};
     use rustpython_vm::convert::ToPyObject;
@@ -24,7 +27,7 @@ pub mod rustpython_ndarray {
         vm: &VirtualMachine,
     ) -> PyResult<PyNdArray> {
         Ok(PyNdArray {
-            inner: PyNdArrayType::from_array(data, shape, vm)?,
+            inner: Rc::new(RefCell::new(PyNdArrayType::from_array(data, shape, vm)?)),
         })
     }
 
@@ -32,7 +35,7 @@ pub mod rustpython_ndarray {
     #[derive(PyPayload, Clone)]
     #[pyclass(module = "rustpython_ndarray", name = "PyNdArray")]
     struct PyNdArray {
-        inner: PyNdArrayType,
+        inner: Rc<RefCell<PyNdArrayType>>,
     }
 
     #[derive(Clone)]
@@ -43,7 +46,7 @@ pub mod rustpython_ndarray {
 
     impl std::fmt::Debug for PyNdArray {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            match &self.inner {
+            match &*self.inner.borrow() {
                 PyNdArrayType::Float32(arr) => writeln!(f, "<PyNdArray f32 {:?}>", arr.dim()),
                 PyNdArrayType::Float64(arr) => writeln!(f, "<PyNdArray f64 {:?}>", arr.dim()),
             }
@@ -150,12 +153,12 @@ pub mod rustpython_ndarray {
     impl PyNdArray {
         #[pymethod(name = "__getitem__")]
         fn get_item(&self, key: Vec<usize>, vm: &VirtualMachine) -> PyResult {
-            self.inner.get_item(vm, &key)
+            self.inner.borrow().get_item(vm, &key)
         }
 
         #[pymethod(name = "__setitem__")]
         fn set_item(&self, key: Vec<usize>, value: PyObjectRef, vm: &VirtualMachine) -> PyResult<()> {
-            self.inner.set_item(vm, &key, value)
+            self.inner.borrow_mut().set_item(vm, &key, value)
         }
     }
 }
