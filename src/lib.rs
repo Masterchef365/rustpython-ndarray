@@ -7,11 +7,13 @@ pub fn make_module(vm: &VirtualMachine) -> PyRef<PyModule> {
 #[rustpython_vm::pymodule]
 pub mod rustpython_ndarray {
     use ndarray::ArrayD;
-    use rustpython_vm::builtins::{PyList, PyListRef, PyStrRef};
+    use rustpython_vm::builtins::{PyBaseExceptionRef, PyList, PyListRef, PyStrRef};
+    use rustpython_vm::convert::ToPyObject;
     use rustpython_vm::object::Traverse;
+    use rustpython_vm::protocol::PyNumber;
     use rustpython_vm::types::AsNumber;
     use rustpython_vm::{
-        pyclass, PyObjectRef, PyPayload, PyResult, TryFromBorrowedObject, TryFromObject,
+        pyclass, PyObject, PyObjectRef, PyPayload, PyResult, TryFromBorrowedObject, TryFromObject,
         VirtualMachine,
     };
 
@@ -32,9 +34,6 @@ pub mod rustpython_ndarray {
     struct PyNdArray {
         inner: PyNdArrayType,
     }
-
-    #[pyclass]
-    impl PyNdArray {}
 
     #[derive(Clone)]
     enum PyNdArrayType {
@@ -75,6 +74,88 @@ pub mod rustpython_ndarray {
                     vm.new_exception_msg(vm.ctx.exceptions.runtime_error.to_owned(), e.to_string())
                 })?,
             ))
+        }
+
+        fn get_item(&self, vm: &VirtualMachine, key: &[usize]) -> PyResult {
+            match self {
+                PyNdArrayType::Float32(data) => Self::get_item_internal(vm, data, key),
+                PyNdArrayType::Float64(data) => Self::get_item_internal(vm, data, key),
+            }
+        }
+
+        fn get_item_internal<T: ToPyObject + Copy>(
+            vm: &VirtualMachine,
+            data: &ArrayD<T>,
+            key: &[usize],
+        ) -> PyResult {
+            Ok(vm.new_pyobj(*data.get(&*key).ok_or_else(|| {
+                vm.new_exception_msg(
+                    vm.ctx.exceptions.index_error.to_owned(),
+                    format!(
+                        "Index {key:?} was out of bounds for array {:?}",
+                        data.shape()
+                    )
+                    .into(),
+                )
+            })?))
+        }
+
+        fn set_item(
+            &mut self,
+            vm: &VirtualMachine,
+            key: &[usize],
+            value: PyObjectRef,
+        ) -> PyResult<()> {
+            match self {
+                PyNdArrayType::Float32(data) => Self::set_item_internal(
+                    vm,
+                    data,
+                    key,
+                    TryFromObject::try_from_object(vm, value)?,
+                )?,
+                PyNdArrayType::Float64(data) => Self::set_item_internal(
+                    vm,
+                    data,
+                    key,
+                    TryFromObject::try_from_object(vm, value)?,
+                )?,
+            }
+
+            Ok(())
+        }
+
+        fn set_item_internal<T: ToPyObject + Copy>(
+            vm: &VirtualMachine,
+            data: &mut ArrayD<T>,
+            key: &[usize],
+            value: T,
+        ) -> PyResult<()> {
+            if let Some(data_val) = data.get_mut(&*key) {
+                *data_val = value;
+                Ok(())
+            } else {
+                Err(vm.new_exception_msg(
+                    vm.ctx.exceptions.index_error.to_owned(),
+                    format!(
+                        "Index {key:?} was out of bounds for array {:?}",
+                        data.shape()
+                    )
+                    .into(),
+                ))
+            }
+        }
+    }
+
+    #[pyclass]
+    impl PyNdArray {
+        #[pymethod(name = "__getitem__")]
+        fn get_item(&self, key: Vec<usize>, vm: &VirtualMachine) -> PyResult {
+            self.inner.get_item(vm, &key)
+        }
+
+        #[pymethod(name = "__setitem__")]
+        fn set_item(&self, key: Vec<usize>, value: PyObjectRef, vm: &VirtualMachine) -> PyResult<()> {
+            self.inner.set_item(vm, &key, value)
         }
     }
 }
