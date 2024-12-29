@@ -1,8 +1,13 @@
 #[rustpython_vm::pymodule]
 pub mod rustpython_ndarray {
     use ndarray::ArrayD;
-    use rustpython_vm::builtins::PyStrRef;
-    use rustpython_vm::{pyclass, PyPayload};
+    use rustpython_vm::builtins::{PyList, PyListRef, PyStrRef};
+    use rustpython_vm::object::Traverse;
+    use rustpython_vm::types::AsNumber;
+    use rustpython_vm::{
+        pyclass, PyObjectRef, PyPayload, PyResult, TryFromBorrowedObject, TryFromObject,
+        VirtualMachine,
+    };
 
     #[pyattr]
     #[derive(PyPayload, Clone)]
@@ -22,22 +27,37 @@ pub mod rustpython_ndarray {
 
     impl std::fmt::Debug for PyNdArray {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            match self.inner {
-                PyNdArrayType::Float32(_) => writeln!(f, "<PyNdArray(f32)>"),
-                PyNdArrayType::Float64(_) => writeln!(f, "<PyNdArray(f64)>"),
+            match &self.inner {
+                PyNdArrayType::Float32(arr) => writeln!(f, "<PyNdArray f32 {:?}>", arr.dim()),
+                PyNdArrayType::Float64(arr) => writeln!(f, "<PyNdArray f64 {:?}>", arr.dim()),
             }
         }
     }
 
-    #[pyfunction]
-    fn do_thing(x: i32) -> i32 {
-        x + 1
-    }
+    impl PyNdArrayType {
+        fn from_array(data: PyListRef, shape: PyListRef, vm: &VirtualMachine) -> PyResult<Self> {
+            let shape: Vec<usize> = TryFromObject::try_from_object(vm, shape.into())?;
 
-    #[pyfunction]
-    fn other_thing(s: PyStrRef) -> (String, usize) {
-        let new_string = format!("hello from rust, {}!", s);
-        let prev_len = s.as_str().len();
-        (new_string, prev_len)
+            let data_f32: PyResult<Vec<f32>> =
+                TryFromObject::try_from_object(vm, data.clone().into());
+
+            if let Ok(data) = data_f32 {
+                return Ok(Self::Float32(
+                    ArrayD::from_shape_vec(&*shape, data).map_err(|e| {
+                        vm.new_exception_msg(
+                            vm.ctx.exceptions.runtime_error.to_owned(),
+                            e.to_string(),
+                        )
+                    })?,
+                ));
+            }
+
+            let data_f64: Vec<f64> = TryFromObject::try_from_object(vm, data.into())?;
+            Ok(Self::Float64(
+                ArrayD::from_shape_vec(shape, data_f64).map_err(|e| {
+                    vm.new_exception_msg(vm.ctx.exceptions.runtime_error.to_owned(), e.to_string())
+                })?,
+            ))
+        }
     }
 }
