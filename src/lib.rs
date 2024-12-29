@@ -9,6 +9,17 @@ pub mod rustpython_ndarray {
         VirtualMachine,
     };
 
+    #[pyfunction]
+    fn array_from_list(
+        data: PyListRef,
+        shape: PyListRef,
+        vm: &VirtualMachine,
+    ) -> PyResult<PyNdArray> {
+        Ok(PyNdArray {
+            inner: PyNdArrayType::from_array(data, shape, vm)?,
+        })
+    }
+
     #[pyattr]
     #[derive(PyPayload, Clone)]
     #[pyclass(module = "rustpython_ndarray", name = "PyNdArray")]
