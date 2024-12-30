@@ -123,6 +123,19 @@ fn get_isize(obj: PyObjectRef, vm: &VirtualMachine) -> PyResult<isize> {
     })
 }
 
+#[derive(Clone, Copy)]
+struct PySliceInfoElem {
+    elem: SliceInfoElem,
+}
+
+impl TryFromObject for PySliceInfoElem {
+    fn try_from_object(vm: &VirtualMachine, obj: PyObjectRef) -> PyResult<Self> {
+        Ok(Self {
+            elem: py_to_slice_info_elem(obj, vm)?
+        })
+    }
+}
+
 fn py_to_slice_info_elem(obj: PyObjectRef, vm: &VirtualMachine) -> PyResult<SliceInfoElem> {
     if let Ok(index) = get_isize(obj.clone(), vm) {
         return Ok(SliceInfoElem::Index(index));
@@ -153,14 +166,14 @@ fn py_to_slice_info_elem(obj: PyObjectRef, vm: &VirtualMachine) -> PyResult<Slic
 
 #[rustpython_vm::pymodule]
 pub mod rustpython_ndarray {
-    use crate::py_to_slice_info_elem;
+    use crate::{py_to_slice_info_elem, PySliceInfoElem};
 
     use super::PyNdArrayType;
 
     use std::cell::RefCell;
     use std::rc::Rc;
 
-    use ndarray::SliceInfoElem;
+    use ndarray::{ArrayView, SliceInfoElem};
     use rustpython_vm::builtins::{PyFloat, PyListRef, PyStrRef};
 
     use rustpython_vm::protocol::{PyMappingMethods, PyNumberMethods};
@@ -187,7 +200,7 @@ pub mod rustpython_ndarray {
     #[pyclass(module = "rustpython_ndarray", name = "PyNdArray")]
     struct PyNdArray {
         inner: Rc<RefCell<PyNdArrayType>>,
-        slices: Vec<SliceInfoElem>,
+        slices: Vec<Vec<PySliceInfoElem>>,
     }
 
     impl std::fmt::Debug for PyNdArray {
@@ -197,19 +210,19 @@ pub mod rustpython_ndarray {
     }
 
     impl PyNdArray {
-        fn add_slice(mut self, slice: SliceInfoElem) -> Self {
+        fn add_slice(mut self, slice: Vec<PySliceInfoElem>) -> Self {
             self.slices.push(slice);
             self
         }
 
         fn inner_getitem(&self, needle: &PyObject, vm: &VirtualMachine) -> PyResult {
-            if let Ok(indices) = TryFromBorrowedObject::try_from_borrowed_object(vm, needle) {
-                let indices: Vec<usize> = indices;
-                return self.inner.borrow().get_item(vm, indices.as_slice());
-            }
+             let indices: Vec<PySliceInfoElem> = TryFromBorrowedObject::try_from_borrowed_object(vm, needle)?;
 
-            py_to_slice_info_elem(needle.to_owned(), vm)
-                .map(|slice| vm.new_pyobj(self.clone().add_slice(slice)))
+             if indices.iter().all(|idx| matches!(idx.elem, SliceInfoElem::Index(_))) {
+                 return Ok(todo!("Get single item"));
+             }
+
+             todo!("Try get slice")
         }
 
         fn inner_setitem(
