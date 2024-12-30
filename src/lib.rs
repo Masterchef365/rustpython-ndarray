@@ -1,5 +1,9 @@
 use ndarray::ArrayD;
-use rustpython_vm::{builtins::{PyListRef, PyModule}, convert::ToPyObject, PyObjectRef, PyRef, PyResult, TryFromObject, VirtualMachine};
+use rustpython_vm::{
+    builtins::{PyListRef, PyModule},
+    convert::ToPyObject,
+    PyObjectRef, PyRef, PyResult, TryFromObject, VirtualMachine,
+};
 
 pub fn make_module(vm: &VirtualMachine) -> PyRef<PyModule> {
     rustpython_ndarray::make_module(vm)
@@ -108,7 +112,7 @@ pub mod rustpython_ndarray {
     use std::cell::RefCell;
     use std::rc::Rc;
 
-    use rustpython_vm::builtins::{PyListRef, PyStrRef};
+    use rustpython_vm::builtins::{PyFloat, PyListRef, PyStrRef};
 
     use rustpython_vm::protocol::PyMappingMethods;
     use rustpython_vm::types::AsMapping;
@@ -156,6 +160,38 @@ pub mod rustpython_ndarray {
             let idx: Vec<usize> = TryFromBorrowedObject::try_from_borrowed_object(vm, needle)?;
             self.inner.borrow_mut().set_item(vm, &idx, value)
         }
+
+        fn inner_iadd(
+            &self,
+            other: PyObjectRef,
+            vm: &VirtualMachine,
+        ) -> PyResult<()> {
+            if let Ok(other) = other.clone().downcast::<PyFloat>() {
+                match &mut *self.inner.borrow_mut() {
+                    PyNdArrayType::Float32(data) => *data += other.to_f64() as f32,
+                    PyNdArrayType::Float64(data) => *data += other.to_f64(),
+                }
+            }
+
+            if let Ok(other) = other.downcast::<PyNdArray>() {
+                match (&mut *self.inner.borrow_mut(), &*other.inner.borrow()) {
+                    (PyNdArrayType::Float32(data), PyNdArrayType::Float32(other)) => {
+                        *data += other;
+                    }
+                    (PyNdArrayType::Float64(data), PyNdArrayType::Float64(other)) => {
+                        *data += other;
+                    }
+                    _ => {
+                        return Err(vm.new_exception_msg(
+                            vm.ctx.exceptions.runtime_error.to_owned(),
+                            "Array datatype mismatch".to_string(),
+                        ))
+                    }
+                }
+            }
+
+            Ok(())
+        }
     }
 
     #[pyclass(with(AsMapping))]
@@ -180,11 +216,15 @@ pub mod rustpython_ndarray {
             Ok(vm.ctx.new_str(format!("{:?}", zelf)))
         }
 
-        /*
         #[pymethod(magic)]
-        fn iadd(zelf: PyRef<Self>, other: PyObjectRef, vm: &VirtualMachine) -> PyResult<PyRef<Self>> {
+        fn iadd(
+            zelf: PyRef<Self>,
+            other: PyObjectRef,
+            vm: &VirtualMachine,
+        ) -> PyResult<PyRef<Self>> {
+            zelf.inner_iadd(other, vm)?;
+            Ok(zelf)
         }
-        */
     }
 
     impl AsMapping for PyNdArray {
