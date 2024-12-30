@@ -169,7 +169,7 @@ pub mod rustpython_ndarray {
                 }
             }
 
-            if let Ok(other) = other.downcast::<PyNdArray>() {
+            if let Ok(other) = other.clone().downcast::<PyNdArray>() {
                 if Rc::ptr_eq(&other.inner, &self.inner) {
                     match &mut *self.inner.borrow_mut() {
                         PyNdArrayType::Float32(data) => *data *= 2.0,
@@ -192,9 +192,13 @@ pub mod rustpython_ndarray {
                         ))
                     }
                 }
+                Ok(())
+            } else {
+                Err(vm.new_exception_msg(
+                    vm.ctx.exceptions.runtime_error.to_owned(),
+                    format!("Cannot add {self:?} and {}", other.obj_type().str(vm).unwrap()),
+                ))
             }
-
-            Ok(())
         }
     }
 
