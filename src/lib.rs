@@ -146,14 +146,14 @@ fn py_to_slice_info_elem(obj: PyObjectRef, vm: &VirtualMachine) -> PyResult<Slic
     }
 
     if let Ok(slice) = obj.clone().downcast::<PySlice>() {
-        let start = slice.start.clone().map(|i| get_isize(i, vm)).transpose()?;
-        let end = get_isize(slice.stop.clone(), vm)?;
-        let step = slice.step.clone().map(|i| get_isize(i, vm)).transpose()?;
+        // TODO: Check for invalid types
+        let start = slice.start.clone().and_then(|i| get_isize(i, vm).ok());
+        let end = get_isize(slice.stop.clone(), vm).ok();
+        let step = slice.step.clone().and_then(|i| get_isize(i, vm).ok());
 
-        // TODO: Is this right?
         return Ok(SliceInfoElem::Slice {
             start: start.unwrap_or(0),
-            end: Some(end),
+            end,
             step: step.unwrap_or(1),
         });
     }
