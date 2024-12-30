@@ -1,6 +1,6 @@
 use num_traits::cast::ToPrimitive;
 
-use ndarray::{ArrayD, ArrayViewD, SliceInfo, SliceInfoElem};
+use ndarray::{ArcArray, Dim, IxDynImpl, SliceInfoElem};
 use rustpython_vm::{
     builtins::{PyInt, PyListRef, PyModule, PyNone, PySlice},
     convert::ToPyObject,
@@ -11,22 +11,12 @@ pub fn make_module(vm: &VirtualMachine) -> PyRef<PyModule> {
     rustpython_ndarray::make_module(vm)
 }
 
+pub type ArcArrayD<T> = ArcArray<T, Dim<IxDynImpl>>;
+
 #[derive(Clone)]
 enum PyNdArrayType {
-    Float32(ArrayD<f32>),
-    Float64(ArrayD<f64>),
-}
-
-fn apply_array_view<'a, T>(arr: &'a ArrayD<T>, slices: &[Vec<SliceInfoElem>]) -> ArrayViewD<'a, T> {
-    let mut view = arr.view();
-
-    for slice in slices {
-        let slice: SliceInfo<Vec<SliceInfoElem>, ndarray::Dim<ndarray::IxDynImpl>, ndarray::Dim<ndarray::IxDynImpl>> =
-            unsafe { SliceInfo::new(slice.clone()) }.unwrap();
-        view = view.slice(slice);
-    }
-
-    view
+    Float32(ArcArrayD<f32>),
+    Float64(ArcArrayD<f64>),
 }
 
 impl std::fmt::Debug for PyNdArrayType {
@@ -46,7 +36,7 @@ impl PyNdArrayType {
 
         if let Ok(data) = data_f32 {
             return Ok(Self::Float32(
-                ArrayD::from_shape_vec(&*shape, data).map_err(|e| {
+                ArcArrayD::from_shape_vec(&*shape, data).map_err(|e| {
                     vm.new_exception_msg(vm.ctx.exceptions.runtime_error.to_owned(), e.to_string())
                 })?,
             ));
@@ -54,12 +44,13 @@ impl PyNdArrayType {
 
         let data_f64: Vec<f64> = TryFromObject::try_from_object(vm, data.into())?;
         Ok(Self::Float64(
-            ArrayD::from_shape_vec(shape, data_f64).map_err(|e| {
+            ArcArrayD::from_shape_vec(shape, data_f64).map_err(|e| {
                 vm.new_exception_msg(vm.ctx.exceptions.runtime_error.to_owned(), e.to_string())
             })?,
         ))
     }
 
+    /*
     fn get_item(&self, vm: &VirtualMachine, key: &[usize]) -> PyResult {
         match self {
             PyNdArrayType::Float32(data) => Self::get_item_generic(vm, data, key),
@@ -69,7 +60,7 @@ impl PyNdArrayType {
 
     fn get_item_generic<T: ToPyObject + Copy>(
         vm: &VirtualMachine,
-        data: &ArrayD<T>,
+        data: &ArcArrayD<T>,
         key: &[usize],
     ) -> PyResult {
         Ok(vm.new_pyobj(*data.get(&*key).ok_or_else(|| {
@@ -99,7 +90,7 @@ impl PyNdArrayType {
 
     fn set_item_internal<T: ToPyObject + Copy>(
         vm: &VirtualMachine,
-        data: &mut ArrayD<T>,
+        data: &mut ArcArrayD<T>,
         key: &[usize],
         value: T,
     ) -> PyResult<()> {
@@ -117,6 +108,7 @@ impl PyNdArrayType {
             ))
         }
     }
+    */
 }
 
 fn get_isize(obj: PyObjectRef, vm: &VirtualMachine) -> PyResult<isize> {
@@ -202,8 +194,7 @@ pub mod rustpython_ndarray {
         vm: &VirtualMachine,
     ) -> PyResult<PyNdArray> {
         Ok(PyNdArray {
-            inner: Rc::new(RefCell::new(PyNdArrayType::from_array(data, shape, vm)?)),
-            slices: vec![],
+            inner: PyNdArrayType::from_array(data, shape, vm)?,
         })
     }
 
@@ -211,35 +202,34 @@ pub mod rustpython_ndarray {
     #[derive(PyPayload, Clone)]
     #[pyclass(module = "rustpython_ndarray", name = "PyNdArray")]
     struct PyNdArray {
-        inner: Rc<RefCell<PyNdArrayType>>,
-        slices: Vec<Vec<SliceInfoElem>>,
+        inner: PyNdArrayType,
     }
 
     impl std::fmt::Debug for PyNdArray {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            self.inner.borrow().fmt(f)
+            self.inner.fmt(f)
         }
     }
 
     impl PyNdArray {
-        fn add_slice(mut self, slice: Vec<PySliceInfoElem>) -> Self {
-            let native_elems = slice.into_iter().map(|elem| elem.elem).collect();
-            self.slices.push(native_elems);
-            self
-        }
-
         fn inner_getitem(&self, needle: &PyObject, vm: &VirtualMachine) -> PyResult {
             let indices: Vec<PySliceInfoElem> =
                 TryFromBorrowedObject::try_from_borrowed_object(vm, needle)?;
 
+            /*
             if indices
                 .iter()
                 .all(|idx| matches!(idx.elem, SliceInfoElem::Index(_)))
-            {
-                return Ok(todo!("Get single item"));
-            }
-
-            todo!("Try get slice")
+            */
+            let slice: Vec<SliceInfoElem> = indices.into_iter().map(|idx| idx.elem).collect();
+            Ok(vm.new_pyobj(match &self.inner {
+                PyNdArrayType::Float32(f) => Self {
+                    inner: PyNdArrayType::Float32(f.clone().slice_move(slice.as_slice())),
+                },
+                PyNdArrayType::Float64(f) => Self {
+                    inner: PyNdArrayType::Float64(f.clone().slice_move(slice.as_slice())),
+                },
+            }))
         }
 
         fn inner_setitem(
@@ -248,51 +238,55 @@ pub mod rustpython_ndarray {
             value: PyObjectRef,
             vm: &VirtualMachine,
         ) -> PyResult<()> {
-            let idx: Vec<usize> = TryFromBorrowedObject::try_from_borrowed_object(vm, needle)?;
-            self.inner.borrow_mut().set_item(vm, &idx, value)
+            //let idx: Vec<usize> = TryFromBorrowedObject::try_from_borrowed_object(vm, needle)?;
+            //self.inner.borrow_mut().set_item(vm, &idx, value)
+            todo!()
         }
 
         fn inner_iadd(&self, other: PyObjectRef, vm: &VirtualMachine) -> PyResult<()> {
-            if let Ok(other) = other.clone().downcast::<PyFloat>() {
-                match &mut *self.inner.borrow_mut() {
-                    PyNdArrayType::Float32(data) => *data += other.to_f64() as f32,
-                    PyNdArrayType::Float64(data) => *data += other.to_f64(),
-                }
-            }
-
-            if let Ok(other) = other.clone().downcast::<PyNdArray>() {
-                if Rc::ptr_eq(&other.inner, &self.inner) {
+            /*
+                if let Ok(other) = other.clone().downcast::<PyFloat>() {
                     match &mut *self.inner.borrow_mut() {
-                        PyNdArrayType::Float32(data) => *data *= 2.0,
-                        PyNdArrayType::Float64(data) => *data *= 2.0,
+                        PyNdArrayType::Float32(data) => *data += other.to_f64() as f32,
+                        PyNdArrayType::Float64(data) => *data += other.to_f64(),
                     }
-                    return Ok(());
                 }
 
-                match (&mut *self.inner.borrow_mut(), &*other.inner.borrow()) {
-                    (PyNdArrayType::Float32(data), PyNdArrayType::Float32(other)) => {
-                        *data += other;
+                if let Ok(other) = other.clone().downcast::<PyNdArray>() {
+                    if Rc::ptr_eq(&other.inner, &self.inner) {
+                        match &mut *self.inner.borrow_mut() {
+                            PyNdArrayType::Float32(data) => *data *= 2.0,
+                            PyNdArrayType::Float64(data) => *data *= 2.0,
+                        }
+                        return Ok(());
                     }
-                    (PyNdArrayType::Float64(data), PyNdArrayType::Float64(other)) => {
-                        *data += other;
+
+                    match (&mut *self.inner.borrow_mut(), &*other.inner.borrow()) {
+                        (PyNdArrayType::Float32(data), PyNdArrayType::Float32(other)) => {
+                            *data += other;
+                        }
+                        (PyNdArrayType::Float64(data), PyNdArrayType::Float64(other)) => {
+                            *data += other;
+                        }
+                        _ => {
+                            return Err(vm.new_exception_msg(
+                                    vm.ctx.exceptions.runtime_error.to_owned(),
+                                    "Array datatype mismatch".to_string(),
+                            ))
+                        }
                     }
-                    _ => {
-                        return Err(vm.new_exception_msg(
+                    Ok(())
+                } else {
+                    Err(vm.new_exception_msg(
                             vm.ctx.exceptions.runtime_error.to_owned(),
-                            "Array datatype mismatch".to_string(),
-                        ))
-                    }
+                            format!(
+                                "Cannot add {self:?} and {}",
+                                other.obj_type().str(vm).unwrap()
+                            ),
+                    ))
                 }
-                Ok(())
-            } else {
-                Err(vm.new_exception_msg(
-                    vm.ctx.exceptions.runtime_error.to_owned(),
-                    format!(
-                        "Cannot add {self:?} and {}",
-                        other.obj_type().str(vm).unwrap()
-                    ),
-                ))
-            }
+            */
+            todo!()
         }
     }
 
