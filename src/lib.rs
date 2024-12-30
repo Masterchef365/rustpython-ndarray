@@ -129,10 +129,16 @@ pub mod rustpython_ndarray {
     }
 
     #[pyattr]
-    #[derive(PyPayload, Clone, Debug)]
+    #[derive(PyPayload, Clone)]
     #[pyclass(module = "rustpython_ndarray", name = "PyNdArray")]
     struct PyNdArray {
         inner: Rc<RefCell<PyNdArrayType>>,
+    }
+
+    impl std::fmt::Debug for PyNdArray {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            self.inner.borrow().fmt(f)
+        }
     }
 
     impl PyNdArray {
