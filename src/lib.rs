@@ -1,6 +1,6 @@
 use num_traits::cast::ToPrimitive;
 
-use ndarray::{ArrayD, SliceInfoElem};
+use ndarray::{ArrayD, ArrayViewD, SliceInfo, SliceInfoElem};
 use rustpython_vm::{
     builtins::{PyInt, PyListRef, PyModule, PyNone, PySlice},
     convert::ToPyObject,
@@ -15,6 +15,18 @@ pub fn make_module(vm: &VirtualMachine) -> PyRef<PyModule> {
 enum PyNdArrayType {
     Float32(ArrayD<f32>),
     Float64(ArrayD<f64>),
+}
+
+fn apply_array_view<'a, T>(arr: &'a ArrayD<T>, slices: &[Vec<SliceInfoElem>]) -> ArrayViewD<'a, T> {
+    let mut view = arr.view();
+
+    for slice in slices {
+        let slice: SliceInfo<Vec<SliceInfoElem>, ndarray::Dim<ndarray::IxDynImpl>, ndarray::Dim<ndarray::IxDynImpl>> =
+            unsafe { SliceInfo::new(slice.clone()) }.unwrap();
+        view = view.slice(slice);
+    }
+
+    view
 }
 
 impl std::fmt::Debug for PyNdArrayType {
@@ -131,7 +143,7 @@ struct PySliceInfoElem {
 impl TryFromObject for PySliceInfoElem {
     fn try_from_object(vm: &VirtualMachine, obj: PyObjectRef) -> PyResult<Self> {
         Ok(Self {
-            elem: py_to_slice_info_elem(obj, vm)?
+            elem: py_to_slice_info_elem(obj, vm)?,
         })
     }
 }
@@ -200,7 +212,7 @@ pub mod rustpython_ndarray {
     #[pyclass(module = "rustpython_ndarray", name = "PyNdArray")]
     struct PyNdArray {
         inner: Rc<RefCell<PyNdArrayType>>,
-        slices: Vec<Vec<PySliceInfoElem>>,
+        slices: Vec<Vec<SliceInfoElem>>,
     }
 
     impl std::fmt::Debug for PyNdArray {
@@ -211,18 +223,23 @@ pub mod rustpython_ndarray {
 
     impl PyNdArray {
         fn add_slice(mut self, slice: Vec<PySliceInfoElem>) -> Self {
-            self.slices.push(slice);
+            let native_elems = slice.into_iter().map(|elem| elem.elem).collect();
+            self.slices.push(native_elems);
             self
         }
 
         fn inner_getitem(&self, needle: &PyObject, vm: &VirtualMachine) -> PyResult {
-             let indices: Vec<PySliceInfoElem> = TryFromBorrowedObject::try_from_borrowed_object(vm, needle)?;
+            let indices: Vec<PySliceInfoElem> =
+                TryFromBorrowedObject::try_from_borrowed_object(vm, needle)?;
 
-             if indices.iter().all(|idx| matches!(idx.elem, SliceInfoElem::Index(_))) {
-                 return Ok(todo!("Get single item"));
-             }
+            if indices
+                .iter()
+                .all(|idx| matches!(idx.elem, SliceInfoElem::Index(_)))
+            {
+                return Ok(todo!("Get single item"));
+            }
 
-             todo!("Try get slice")
+            todo!("Try get slice")
         }
 
         fn inner_setitem(
