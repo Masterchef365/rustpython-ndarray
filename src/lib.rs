@@ -243,9 +243,9 @@ pub mod rustpython_ndarray {
         shape: PyListRef,
         vm: &VirtualMachine,
     ) -> PyResult<PyNdArray> {
-        Ok(PyNdArray {
-            inner: PyNdArrayType::from_array(data, shape, vm)?,
-        })
+        Ok(PyNdArray::from_array(PyNdArrayType::from_array(
+            data, shape, vm,
+        )?))
     }
 
     #[pyattr]
@@ -287,9 +287,28 @@ pub mod rustpython_ndarray {
             value: PyObjectRef,
             vm: &VirtualMachine,
         ) -> PyResult<()> {
-            //let idx: Vec<usize> = TryFromBorrowedObject::try_from_borrowed_object(vm, needle)?;
-            //self.inner.borrow_mut().set_item(vm, &idx, value)
-            todo!()
+            let indices: Vec<PySliceInfoElem> =
+                TryFromBorrowedObject::try_from_borrowed_object(vm, needle)?;
+
+            let slice: Vec<SliceInfoElem> = indices.into_iter().map(|idx| idx.elem).collect();
+
+            let mut sliced_self = self.inner.slice(&slice, vm)?;
+            let value = value.downcast::<PyFloat>().map_err(|_| {
+                vm.new_exception_msg(
+                    vm.ctx.exceptions.runtime_error.to_owned(),
+                    "Can only set floats".to_string(),
+                )
+            })?;
+            let value = value.to_f64();
+
+            match &mut sliced_self {
+                PyNdArrayType::Float32(data) => {
+                    data.iter_mut().for_each(|elem| *elem = value as f32)
+                }
+                PyNdArrayType::Float64(data) => data.iter_mut().for_each(|elem| *elem = value),
+            }
+
+            Ok(())
         }
 
         fn inner_iadd(&self, other: PyObjectRef, vm: &VirtualMachine) -> PyResult<()> {
