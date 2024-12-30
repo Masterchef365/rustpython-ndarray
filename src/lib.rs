@@ -10,13 +10,11 @@ pub mod rustpython_ndarray {
     use std::rc::Rc;
 
     use ndarray::ArrayD;
-    use rustpython_vm::builtins::{
-        PyBaseExceptionRef, PyGenericAlias, PyList, PyListRef, PyStrRef, PyTypeRef,
-    };
+    use rustpython_vm::builtins::PyListRef;
     use rustpython_vm::convert::ToPyObject;
-    use rustpython_vm::object::Traverse;
-    use rustpython_vm::protocol::{PyMappingMethods, PyNumber};
-    use rustpython_vm::types::{AsMapping, AsNumber};
+    
+    use rustpython_vm::protocol::PyMappingMethods;
+    use rustpython_vm::types::AsMapping;
     use rustpython_vm::{
         atomic_func, pyclass, PyObject, PyObjectRef, PyPayload, PyResult, TryFromBorrowedObject,
         TryFromObject, VirtualMachine,
@@ -83,12 +81,12 @@ pub mod rustpython_ndarray {
 
         fn get_item(&self, vm: &VirtualMachine, key: &[usize]) -> PyResult {
             match self {
-                PyNdArrayType::Float32(data) => Self::get_item_internal(vm, data, key),
-                PyNdArrayType::Float64(data) => Self::get_item_internal(vm, data, key),
+                PyNdArrayType::Float32(data) => Self::get_item_generic(vm, data, key),
+                PyNdArrayType::Float64(data) => Self::get_item_generic(vm, data, key),
             }
         }
 
-        fn get_item_internal<T: ToPyObject + Copy>(
+        fn get_item_generic<T: ToPyObject + Copy>(
             vm: &VirtualMachine,
             data: &ArrayD<T>,
             key: &[usize],
@@ -184,23 +182,6 @@ pub mod rustpython_ndarray {
         ) -> PyResult<()> {
             self.inner_setitem(&*needle, value, vm)
         }
-
-        /*
-        #[pymethod(magic)]
-        fn getitem(&self, key: Vec<usize>, vm: &VirtualMachine) -> PyResult {
-        }
-
-        #[pymethod(magic)]
-        fn setitem(&self, key: Vec<usize>, value: PyObjectRef, vm: &VirtualMachine) -> PyResult<()> {
-        }
-        */
-
-        /*
-        #[pyclassmethod(magic)]
-        fn class_getitem(cls: PyTypeRef, args: PyObjectRef, vm: &VirtualMachine) -> PyGenericAlias {
-            PyGenericAlias::new(cls, args, vm)
-        }
-        */
     }
 
     impl AsMapping for PyNdArray {
