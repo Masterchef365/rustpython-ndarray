@@ -10,13 +10,16 @@ pub mod rustpython_ndarray {
     use std::rc::Rc;
 
     use ndarray::ArrayD;
-    use rustpython_vm::builtins::{PyBaseExceptionRef, PyGenericAlias, PyList, PyListRef, PyStrRef, PyTypeRef};
+    use rustpython_vm::builtins::{
+        PyBaseExceptionRef, PyGenericAlias, PyList, PyListRef, PyStrRef, PyTypeRef,
+    };
     use rustpython_vm::convert::ToPyObject;
     use rustpython_vm::object::Traverse;
     use rustpython_vm::protocol::{PyMappingMethods, PyNumber};
     use rustpython_vm::types::{AsMapping, AsNumber};
     use rustpython_vm::{
-        atomic_func, pyclass, PyObject, PyObjectRef, PyPayload, PyResult, TryFromBorrowedObject, TryFromObject, VirtualMachine
+        atomic_func, pyclass, PyObject, PyObjectRef, PyPayload, PyResult, TryFromBorrowedObject,
+        TryFromObject, VirtualMachine,
     };
 
     #[pyfunction]
@@ -150,7 +153,18 @@ pub mod rustpython_ndarray {
 
     impl PyNdArray {
         fn inner_getitem(&self, needle: &PyObject, vm: &VirtualMachine) -> PyResult {
-            Ok(vm.new_pyobj(69420u32))
+            let idx: Vec<usize> = TryFromBorrowedObject::try_from_borrowed_object(vm, needle)?;
+            self.inner.borrow().get_item(vm, idx.as_slice())
+        }
+
+        fn inner_setitem(
+            &self,
+            needle: &PyObject,
+            value: PyObjectRef,
+            vm: &VirtualMachine,
+        ) -> PyResult<()> {
+            let idx: Vec<usize> = TryFromBorrowedObject::try_from_borrowed_object(vm, needle)?;
+            self.inner.borrow_mut().set_item(vm, &idx, value)
         }
     }
 
@@ -161,7 +175,6 @@ pub mod rustpython_ndarray {
             self.inner_getitem(&*needle, vm)
         }
 
-        /*
         #[pymethod(magic)]
         fn setitem(
             &self,
@@ -169,19 +182,16 @@ pub mod rustpython_ndarray {
             value: PyObjectRef,
             vm: &VirtualMachine,
         ) -> PyResult<()> {
-            Ok(())
+            self.inner_setitem(&*needle, value, vm)
         }
-        */
 
         /*
         #[pymethod(magic)]
         fn getitem(&self, key: Vec<usize>, vm: &VirtualMachine) -> PyResult {
-            self.inner.borrow().get_item(vm, &key)
         }
 
         #[pymethod(magic)]
         fn setitem(&self, key: Vec<usize>, value: PyObjectRef, vm: &VirtualMachine) -> PyResult<()> {
-            self.inner.borrow_mut().set_item(vm, &key, value)
         }
         */
 
@@ -200,12 +210,25 @@ pub mod rustpython_ndarray {
                     PyNdArray::mapping_downcast(mapping).inner_getitem(needle, vm)
                 }),
                 ass_subscript: atomic_func!(|mapping, needle, value, vm| {
-                    todo!()
+                    let zelf = PyNdArray::mapping_downcast(mapping);
+                    if let Some(value) = value {
+                        zelf.inner_setitem(needle, value, vm)
+                    } else {
+                        //zelf.inner_delitem(needle, vm)
+                        Err(vm.new_exception_msg(
+                            vm.ctx.exceptions.runtime_error.to_owned(),
+                            "Arrays do not support delete".to_string(),
+                        ))
+                    }
                 }),
-                length: atomic_func!(|mapping, _vm| todo!()),
+                length: atomic_func!(|_mapping, vm| {
+                    Err(vm.new_exception_msg(
+                        vm.ctx.exceptions.runtime_error.to_owned(),
+                        "Arrays do not support len()".to_string(),
+                    ))
+                }),
             };
             &AS_MAPPING
         }
     }
-
 }
