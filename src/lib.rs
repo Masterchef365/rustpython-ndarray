@@ -153,11 +153,14 @@ fn py_to_slice_info_elem(obj: PyObjectRef, vm: &VirtualMachine) -> PyResult<Slic
 
 #[rustpython_vm::pymodule]
 pub mod rustpython_ndarray {
+    use crate::py_to_slice_info_elem;
+
     use super::PyNdArrayType;
 
     use std::cell::RefCell;
     use std::rc::Rc;
 
+    use ndarray::SliceInfoElem;
     use rustpython_vm::builtins::{PyFloat, PyListRef, PyStrRef};
 
     use rustpython_vm::protocol::{PyMappingMethods, PyNumberMethods};
@@ -175,6 +178,7 @@ pub mod rustpython_ndarray {
     ) -> PyResult<PyNdArray> {
         Ok(PyNdArray {
             inner: Rc::new(RefCell::new(PyNdArrayType::from_array(data, shape, vm)?)),
+            slices: vec![],
         })
     }
 
@@ -183,6 +187,7 @@ pub mod rustpython_ndarray {
     #[pyclass(module = "rustpython_ndarray", name = "PyNdArray")]
     struct PyNdArray {
         inner: Rc<RefCell<PyNdArrayType>>,
+        slices: Vec<SliceInfoElem>,
     }
 
     impl std::fmt::Debug for PyNdArray {
@@ -192,9 +197,19 @@ pub mod rustpython_ndarray {
     }
 
     impl PyNdArray {
+        fn add_slice(mut self, slice: SliceInfoElem) -> Self {
+            self.slices.push(slice);
+            self
+        }
+
         fn inner_getitem(&self, needle: &PyObject, vm: &VirtualMachine) -> PyResult {
-            let idx: Vec<usize> = TryFromBorrowedObject::try_from_borrowed_object(vm, needle)?;
-            self.inner.borrow().get_item(vm, idx.as_slice())
+            if let Ok(indices) = TryFromBorrowedObject::try_from_borrowed_object(vm, needle) {
+                let indices: Vec<usize> = indices;
+                return self.inner.borrow().get_item(vm, indices.as_slice());
+            }
+
+            py_to_slice_info_elem(needle.to_owned(), vm)
+                .map(|slice| vm.new_pyobj(self.clone().add_slice(slice)))
         }
 
         fn inner_setitem(
