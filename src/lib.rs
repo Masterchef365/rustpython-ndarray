@@ -235,25 +235,35 @@ pub mod rustpython_ndarray {
             Self { inner }
         }
 
+        fn item(&self, vm: &VirtualMachine) -> PyObjectRef {
+            assert_eq!(self.ndim(), 0);
+            let idx = vec![0_usize; self.ndim()];
+            match &self.inner {
+                PyNdArrayType::Float32(f) => vm.new_pyobj(f.get(idx.as_slice()).copied()),
+                PyNdArrayType::Float64(f) => vm.new_pyobj(f.get(idx.as_slice()).copied()),
+            }
+        }
+
         fn inner_getitem(&self, needle: &PyObject, vm: &VirtualMachine) -> PyResult {
             let indices: Vec<PySliceInfoElem> =
                 TryFromBorrowedObject::try_from_borrowed_object(vm, needle)?;
 
-            /*
-            if indices
-                .iter()
-                .all(|idx| matches!(idx.elem, SliceInfoElem::Index(_)))
-            */
-
             let slice: Vec<SliceInfoElem> = indices.into_iter().map(|idx| idx.elem).collect();
-            Ok(vm.new_pyobj(match &self.inner {
+
+            let sliced_self = match &self.inner {
                 PyNdArrayType::Float32(f) => Self::from_array(PyNdArrayType::Float32(
                     generic_checked_slice(f.clone(), &slice, vm)?,
                 )),
                 PyNdArrayType::Float64(f) => Self::from_array(PyNdArrayType::Float64(
                     generic_checked_slice(f.clone(), &slice, vm)?,
                 )),
-            }))
+            };
+
+            if sliced_self.ndim() == 0 {
+                Ok(sliced_self.item(vm))
+            } else {
+                Ok(vm.new_pyobj(sliced_self))
+            }
         }
 
         fn inner_setitem(
@@ -334,6 +344,14 @@ pub mod rustpython_ndarray {
         #[pymethod(magic)]
         fn str(zelf: PyRef<Self>, vm: &VirtualMachine) -> PyResult<PyStrRef> {
             Ok(vm.ctx.new_str(format!("{:?}", zelf)))
+        }
+
+        #[pymethod]
+        fn ndim(&self) -> usize {
+            match &self.inner {
+                PyNdArrayType::Float32(f) => f.ndim(),
+                PyNdArrayType::Float64(f) => f.ndim(),
+            }
         }
 
         #[pymethod(magic)]
