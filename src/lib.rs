@@ -28,7 +28,6 @@ impl std::fmt::Debug for PyNdArrayType {
     }
 }
 
-
 fn generic_checked_slice<T>(
     arr: ArcArrayD<T>,
     slice: &[SliceInfoElem],
@@ -53,6 +52,15 @@ fn generic_checked_slice<T>(
 }
 
 impl PyNdArrayType {
+    fn item(&self, vm: &VirtualMachine) -> PyObjectRef {
+        assert_eq!(self.ndim(), 0);
+        let idx = vec![0_usize; self.ndim()];
+        match self {
+            PyNdArrayType::Float32(f) => vm.new_pyobj(f.get(idx.as_slice()).copied()),
+            PyNdArrayType::Float64(f) => vm.new_pyobj(f.get(idx.as_slice()).copied()),
+        }
+    }
+
     fn from_array(data: PyListRef, shape: PyListRef, vm: &VirtualMachine) -> PyResult<Self> {
         let shape: Vec<usize> = TryFromObject::try_from_object(vm, shape.into())?;
 
@@ -76,12 +84,12 @@ impl PyNdArrayType {
 
     fn slice(&self, slice: &[SliceInfoElem], vm: &VirtualMachine) -> PyResult<Self> {
         Ok(match self {
-            PyNdArrayType::Float32(f) => PyNdArrayType::Float32(
-                    generic_checked_slice(f.clone(), slice, vm)?,
-            ),
-            PyNdArrayType::Float64(f) => PyNdArrayType::Float64(
-                    generic_checked_slice(f.clone(), slice, vm)?,
-            ),
+            PyNdArrayType::Float32(f) => {
+                PyNdArrayType::Float32(generic_checked_slice(f.clone(), slice, vm)?)
+            }
+            PyNdArrayType::Float64(f) => {
+                PyNdArrayType::Float64(generic_checked_slice(f.clone(), slice, vm)?)
+            }
         })
     }
 
@@ -258,27 +266,18 @@ pub mod rustpython_ndarray {
             Self { inner }
         }
 
-        fn item(&self, vm: &VirtualMachine) -> PyObjectRef {
-            assert_eq!(self.ndim(), 0);
-            let idx = vec![0_usize; self.ndim()];
-            match &self.inner {
-                PyNdArrayType::Float32(f) => vm.new_pyobj(f.get(idx.as_slice()).copied()),
-                PyNdArrayType::Float64(f) => vm.new_pyobj(f.get(idx.as_slice()).copied()),
-            }
-        }
-
         fn inner_getitem(&self, needle: &PyObject, vm: &VirtualMachine) -> PyResult {
             let indices: Vec<PySliceInfoElem> =
                 TryFromBorrowedObject::try_from_borrowed_object(vm, needle)?;
 
             let slice: Vec<SliceInfoElem> = indices.into_iter().map(|idx| idx.elem).collect();
 
-            let sliced_self = self.inner.slice(&slice)?;
+            let sliced_self = self.inner.slice(&slice, vm)?;
 
             if sliced_self.ndim() == 0 {
                 Ok(sliced_self.item(vm))
             } else {
-                Ok(vm.new_pyobj(sliced_self))
+                Ok(vm.new_pyobj(Self { inner: sliced_self }))
             }
         }
 
