@@ -10,14 +10,13 @@ pub mod rustpython_ndarray {
     use std::rc::Rc;
 
     use ndarray::ArrayD;
-    use rustpython_vm::builtins::{PyBaseExceptionRef, PyList, PyListRef, PyStrRef};
+    use rustpython_vm::builtins::{PyBaseExceptionRef, PyGenericAlias, PyList, PyListRef, PyStrRef, PyTypeRef};
     use rustpython_vm::convert::ToPyObject;
     use rustpython_vm::object::Traverse;
-    use rustpython_vm::protocol::PyNumber;
-    use rustpython_vm::types::AsNumber;
+    use rustpython_vm::protocol::{PyMappingMethods, PyNumber};
+    use rustpython_vm::types::{AsMapping, AsNumber};
     use rustpython_vm::{
-        pyclass, PyObject, PyObjectRef, PyPayload, PyResult, TryFromBorrowedObject, TryFromObject,
-        VirtualMachine,
+        atomic_func, pyclass, PyObject, PyObjectRef, PyPayload, PyResult, TryFromBorrowedObject, TryFromObject, VirtualMachine
     };
 
     #[pyfunction]
@@ -149,16 +148,64 @@ pub mod rustpython_ndarray {
         }
     }
 
-    #[pyclass]
     impl PyNdArray {
-        #[pymethod(name = "__getitem__")]
-        fn get_item(&self, key: Vec<usize>, vm: &VirtualMachine) -> PyResult {
+        fn inner_getitem(&self, needle: &PyObject, vm: &VirtualMachine) -> PyResult {
+            Ok(vm.new_pyobj(69420u32))
+        }
+    }
+
+    #[pyclass(with(AsMapping))]
+    impl PyNdArray {
+        #[pymethod(magic)]
+        fn getitem(&self, needle: PyObjectRef, vm: &VirtualMachine) -> PyResult {
+            self.inner_getitem(&*needle, vm)
+        }
+
+        /*
+        #[pymethod(magic)]
+        fn setitem(
+            &self,
+            needle: PyObjectRef,
+            value: PyObjectRef,
+            vm: &VirtualMachine,
+        ) -> PyResult<()> {
+            Ok(())
+        }
+        */
+
+        /*
+        #[pymethod(magic)]
+        fn getitem(&self, key: Vec<usize>, vm: &VirtualMachine) -> PyResult {
             self.inner.borrow().get_item(vm, &key)
         }
 
-        #[pymethod(name = "__setitem__")]
-        fn set_item(&self, key: Vec<usize>, value: PyObjectRef, vm: &VirtualMachine) -> PyResult<()> {
+        #[pymethod(magic)]
+        fn setitem(&self, key: Vec<usize>, value: PyObjectRef, vm: &VirtualMachine) -> PyResult<()> {
             self.inner.borrow_mut().set_item(vm, &key, value)
         }
+        */
+
+        /*
+        #[pyclassmethod(magic)]
+        fn class_getitem(cls: PyTypeRef, args: PyObjectRef, vm: &VirtualMachine) -> PyGenericAlias {
+            PyGenericAlias::new(cls, args, vm)
+        }
+        */
     }
+
+    impl AsMapping for PyNdArray {
+        fn as_mapping() -> &'static PyMappingMethods {
+            static AS_MAPPING: PyMappingMethods = PyMappingMethods {
+                subscript: atomic_func!(|mapping, needle, vm| {
+                    PyNdArray::mapping_downcast(mapping).inner_getitem(needle, vm)
+                }),
+                ass_subscript: atomic_func!(|mapping, needle, value, vm| {
+                    todo!()
+                }),
+                length: atomic_func!(|mapping, _vm| todo!()),
+            };
+            &AS_MAPPING
+        }
+    }
+
 }
