@@ -170,7 +170,7 @@ fn py_to_slice_info_elem(obj: PyObjectRef, vm: &VirtualMachine) -> PyResult<Slic
 
 #[rustpython_vm::pymodule]
 pub mod rustpython_ndarray {
-    use crate::{py_to_slice_info_elem, PySliceInfoElem};
+    use crate::{py_to_slice_info_elem, ArcArrayD, PySliceInfoElem};
 
     use super::PyNdArrayType;
 
@@ -211,7 +211,30 @@ pub mod rustpython_ndarray {
         }
     }
 
+    fn generic_checked_slice<T>(
+        arr: ArcArrayD<T>,
+        slice: &[SliceInfoElem],
+        vm: &VirtualMachine,
+    ) -> PyResult<ArcArrayD<T>> {
+        if slice.len() != arr.ndim() {
+            return Err(vm.new_exception_msg(
+                vm.ctx.exceptions.runtime_error.to_owned(),
+                format!(
+                    "Slice has {} args but array has {} dimensions",
+                    slice.len(),
+                    arr.ndim()
+                ),
+            ));
+        }
+
+        Ok(arr.slice_move(slice))
+    }
+
     impl PyNdArray {
+        fn from_array(inner: PyNdArrayType) -> Self {
+            Self { inner }
+        }
+
         fn inner_getitem(&self, needle: &PyObject, vm: &VirtualMachine) -> PyResult {
             let indices: Vec<PySliceInfoElem> =
                 TryFromBorrowedObject::try_from_borrowed_object(vm, needle)?;
@@ -221,14 +244,15 @@ pub mod rustpython_ndarray {
                 .iter()
                 .all(|idx| matches!(idx.elem, SliceInfoElem::Index(_)))
             */
+
             let slice: Vec<SliceInfoElem> = indices.into_iter().map(|idx| idx.elem).collect();
             Ok(vm.new_pyobj(match &self.inner {
-                PyNdArrayType::Float32(f) => Self {
-                    inner: PyNdArrayType::Float32(f.clone().slice_move(slice.as_slice())),
-                },
-                PyNdArrayType::Float64(f) => Self {
-                    inner: PyNdArrayType::Float64(f.clone().slice_move(slice.as_slice())),
-                },
+                PyNdArrayType::Float32(f) => Self::from_array(PyNdArrayType::Float32(
+                    generic_checked_slice(f.clone(), &slice, vm)?,
+                )),
+                PyNdArrayType::Float64(f) => Self::from_array(PyNdArrayType::Float64(
+                    generic_checked_slice(f.clone(), &slice, vm)?,
+                )),
             }))
         }
 
