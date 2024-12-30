@@ -1,6 +1,8 @@
-use ndarray::ArrayD;
+use num_traits::cast::ToPrimitive;
+
+use ndarray::{ArrayD, SliceInfoElem};
 use rustpython_vm::{
-    builtins::{PyListRef, PyModule},
+    builtins::{PyInt, PyListRef, PyModule, PyNone, PySlice},
     convert::ToPyObject,
     PyObjectRef, PyRef, PyResult, TryFromObject, VirtualMachine,
 };
@@ -105,6 +107,50 @@ impl PyNdArrayType {
     }
 }
 
+fn get_isize(obj: PyObjectRef, vm: &VirtualMachine) -> PyResult<isize> {
+    let py_int = obj.downcast::<PyInt>().or_else(|_| {
+        Err(vm.new_exception_msg(
+            vm.ctx.exceptions.runtime_error.to_owned(),
+            "Indices must be integers".to_string(),
+        ))
+    })?;
+
+    py_int.as_bigint().to_isize().ok_or_else(|| {
+        vm.new_exception_msg(
+            vm.ctx.exceptions.runtime_error.to_owned(),
+            "Index cannot convert to isize".to_string(),
+        )
+    })
+}
+
+fn py_to_slice_info_elem(obj: PyObjectRef, vm: &VirtualMachine) -> PyResult<SliceInfoElem> {
+    if let Ok(index) = get_isize(obj.clone(), vm) {
+        return Ok(SliceInfoElem::Index(index));
+    }
+
+    if let Ok(slice) = obj.clone().downcast::<PySlice>() {
+        let start = slice.start.clone().map(|i| get_isize(i, vm)).transpose()?;
+        let end = get_isize(slice.stop.clone(), vm)?;
+        let step = slice.step.clone().map(|i| get_isize(i, vm)).transpose()?;
+
+        // TODO: Is this right?
+        return Ok(SliceInfoElem::Slice {
+            start: start.unwrap_or(0),
+            end: Some(end),
+            step: step.unwrap_or(1),
+        });
+    }
+
+    if let Ok(_) = obj.downcast::<PyNone>() {
+        return Ok(SliceInfoElem::NewAxis);
+    }
+
+    Err(vm.new_exception_msg(
+        vm.ctx.exceptions.runtime_error.to_owned(),
+        "Invalid slice index type".to_string(),
+    ))
+}
+
 #[rustpython_vm::pymodule]
 pub mod rustpython_ndarray {
     use super::PyNdArrayType;
@@ -175,7 +221,7 @@ pub mod rustpython_ndarray {
                         PyNdArrayType::Float32(data) => *data *= 2.0,
                         PyNdArrayType::Float64(data) => *data *= 2.0,
                     }
-                    return Ok(())
+                    return Ok(());
                 }
 
                 match (&mut *self.inner.borrow_mut(), &*other.inner.borrow()) {
@@ -196,7 +242,10 @@ pub mod rustpython_ndarray {
             } else {
                 Err(vm.new_exception_msg(
                     vm.ctx.exceptions.runtime_error.to_owned(),
-                    format!("Cannot add {self:?} and {}", other.obj_type().str(vm).unwrap()),
+                    format!(
+                        "Cannot add {self:?} and {}",
+                        other.obj_type().str(vm).unwrap()
+                    ),
                 ))
             }
         }

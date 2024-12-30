@@ -9,3 +9,4 @@ ndarray = "0.16.1"
 
 # For the macros in rustpython-vm
 crossbeam-utils = "0.8.19"
+num-traits = "0.2.19"
