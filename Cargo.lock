@@ -593,8 +593,7 @@ dependencies = [
 [[package]]
 name = "ndarray"
 version = "0.16.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "882ed72dce9365842bf196bdeedf5055305f11fc8c03dee7bb0194a6cad34841"
+source = "git+https://github.com/Masterchef365/ndarray.git?branch=bounds-check#3e0d52064e858fcbc20ac10d3f71f755d17bec75"
 dependencies = [
  "matrixmultiply",
  "num-complex",

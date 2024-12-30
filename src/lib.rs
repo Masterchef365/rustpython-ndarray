@@ -227,6 +227,10 @@ pub mod rustpython_ndarray {
             ));
         }
 
+        if let Err(e) = arr.bounds_check(slice) {
+            return Err(vm.new_exception_msg(vm.ctx.exceptions.runtime_error.to_owned(), e));
+        }
+
         Ok(arr.slice_move(slice))
     }
 
