@@ -114,8 +114,8 @@ pub mod rustpython_ndarray {
 
     use rustpython_vm::builtins::{PyFloat, PyListRef, PyStrRef};
 
-    use rustpython_vm::protocol::PyMappingMethods;
-    use rustpython_vm::types::AsMapping;
+    use rustpython_vm::protocol::{PyMappingMethods, PyNumberMethods};
+    use rustpython_vm::types::{AsMapping, AsNumber};
     use rustpython_vm::{
         atomic_func, pyclass, PyObject, PyObjectRef, PyPayload, PyRef, PyResult,
         TryFromBorrowedObject, VirtualMachine,
@@ -161,11 +161,7 @@ pub mod rustpython_ndarray {
             self.inner.borrow_mut().set_item(vm, &idx, value)
         }
 
-        fn inner_iadd(
-            &self,
-            other: PyObjectRef,
-            vm: &VirtualMachine,
-        ) -> PyResult<()> {
+        fn inner_iadd(&self, other: PyObjectRef, vm: &VirtualMachine) -> PyResult<()> {
             if let Ok(other) = other.clone().downcast::<PyFloat>() {
                 match &mut *self.inner.borrow_mut() {
                     PyNdArrayType::Float32(data) => *data += other.to_f64() as f32,
@@ -251,6 +247,19 @@ pub mod rustpython_ndarray {
                         "Arrays do not support len()".to_string(),
                     ))
                 }),
+            };
+            &AS_MAPPING
+        }
+    }
+
+    impl AsNumber for PyNdArray {
+        fn as_number() -> &'static rustpython_vm::protocol::PyNumberMethods {
+            static AS_MAPPING: PyNumberMethods = PyNumberMethods {
+                inplace_add: Some(|a, b, vm| {
+                    PyNdArray::number_downcast(a.to_number()).inner_iadd(b.to_owned(), vm)?;
+                    Ok(a.to_owned())
+                }),
+                ..PyNumberMethods::NOT_IMPLEMENTED
             };
             &AS_MAPPING
         }
