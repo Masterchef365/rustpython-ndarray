@@ -10,7 +10,7 @@ pub mod rustpython_ndarray {
     use std::rc::Rc;
 
     use ndarray::ArrayD;
-    use rustpython_vm::builtins::PyListRef;
+    use rustpython_vm::builtins::{PyListRef, PyStrRef};
     use rustpython_vm::convert::ToPyObject;
     
     use rustpython_vm::protocol::PyMappingMethods;
@@ -181,6 +181,12 @@ pub mod rustpython_ndarray {
             vm: &VirtualMachine,
         ) -> PyResult<()> {
             self.inner_setitem(&*needle, value, vm)
+        }
+
+        #[pymethod(magic)]
+        fn str(zelf: PyObjectRef, vm: &VirtualMachine) -> PyResult<PyStrRef> {
+            let zelf = zelf.downcast::<PyNdArray>().unwrap();
+            Ok(vm.ctx.new_str(format!("{:?}", zelf)))
         }
     }
 
