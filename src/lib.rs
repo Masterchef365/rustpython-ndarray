@@ -28,6 +28,30 @@ impl std::fmt::Debug for PyNdArrayType {
     }
 }
 
+
+fn generic_checked_slice<T>(
+    arr: ArcArrayD<T>,
+    slice: &[SliceInfoElem],
+    vm: &VirtualMachine,
+) -> PyResult<ArcArrayD<T>> {
+    if slice.len() != arr.ndim() {
+        return Err(vm.new_exception_msg(
+            vm.ctx.exceptions.runtime_error.to_owned(),
+            format!(
+                "Slice has {} args but array has {} dimensions",
+                slice.len(),
+                arr.ndim()
+            ),
+        ));
+    }
+
+    if let Err(e) = arr.bounds_check(slice) {
+        return Err(vm.new_exception_msg(vm.ctx.exceptions.runtime_error.to_owned(), e));
+    }
+
+    Ok(arr.slice_move(slice))
+}
+
 impl PyNdArrayType {
     fn from_array(data: PyListRef, shape: PyListRef, vm: &VirtualMachine) -> PyResult<Self> {
         let shape: Vec<usize> = TryFromObject::try_from_object(vm, shape.into())?;
@@ -48,6 +72,24 @@ impl PyNdArrayType {
                 vm.new_exception_msg(vm.ctx.exceptions.runtime_error.to_owned(), e.to_string())
             })?,
         ))
+    }
+
+    fn slice(&self, slice: &[SliceInfoElem], vm: &VirtualMachine) -> PyResult<Self> {
+        Ok(match self {
+            PyNdArrayType::Float32(f) => PyNdArrayType::Float32(
+                    generic_checked_slice(f.clone(), slice, vm)?,
+            ),
+            PyNdArrayType::Float64(f) => PyNdArrayType::Float64(
+                    generic_checked_slice(f.clone(), slice, vm)?,
+            ),
+        })
+    }
+
+    fn ndim(&self) -> usize {
+        match self {
+            PyNdArrayType::Float32(f) => f.ndim(),
+            PyNdArrayType::Float64(f) => f.ndim(),
+        }
     }
 
     /*
@@ -211,29 +253,6 @@ pub mod rustpython_ndarray {
         }
     }
 
-    fn generic_checked_slice<T>(
-        arr: ArcArrayD<T>,
-        slice: &[SliceInfoElem],
-        vm: &VirtualMachine,
-    ) -> PyResult<ArcArrayD<T>> {
-        if slice.len() != arr.ndim() {
-            return Err(vm.new_exception_msg(
-                vm.ctx.exceptions.runtime_error.to_owned(),
-                format!(
-                    "Slice has {} args but array has {} dimensions",
-                    slice.len(),
-                    arr.ndim()
-                ),
-            ));
-        }
-
-        if let Err(e) = arr.bounds_check(slice) {
-            return Err(vm.new_exception_msg(vm.ctx.exceptions.runtime_error.to_owned(), e));
-        }
-
-        Ok(arr.slice_move(slice))
-    }
-
     impl PyNdArray {
         fn from_array(inner: PyNdArrayType) -> Self {
             Self { inner }
@@ -254,14 +273,7 @@ pub mod rustpython_ndarray {
 
             let slice: Vec<SliceInfoElem> = indices.into_iter().map(|idx| idx.elem).collect();
 
-            let sliced_self = match &self.inner {
-                PyNdArrayType::Float32(f) => Self::from_array(PyNdArrayType::Float32(
-                    generic_checked_slice(f.clone(), &slice, vm)?,
-                )),
-                PyNdArrayType::Float64(f) => Self::from_array(PyNdArrayType::Float64(
-                    generic_checked_slice(f.clone(), &slice, vm)?,
-                )),
-            };
+            let sliced_self = self.inner.slice(&slice)?;
 
             if sliced_self.ndim() == 0 {
                 Ok(sliced_self.item(vm))
@@ -352,10 +364,7 @@ pub mod rustpython_ndarray {
 
         #[pymethod]
         fn ndim(&self) -> usize {
-            match &self.inner {
-                PyNdArrayType::Float32(f) => f.ndim(),
-                PyNdArrayType::Float64(f) => f.ndim(),
-            }
+            self.inner.ndim()
         }
 
         #[pymethod(magic)]
