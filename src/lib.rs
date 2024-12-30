@@ -170,6 +170,14 @@ pub mod rustpython_ndarray {
             }
 
             if let Ok(other) = other.downcast::<PyNdArray>() {
+                if Rc::ptr_eq(&other.inner, &self.inner) {
+                    match &mut *self.inner.borrow_mut() {
+                        PyNdArrayType::Float32(data) => *data *= 2.0,
+                        PyNdArrayType::Float64(data) => *data *= 2.0,
+                    }
+                    return Ok(())
+                }
+
                 match (&mut *self.inner.borrow_mut(), &*other.inner.borrow()) {
                     (PyNdArrayType::Float32(data), PyNdArrayType::Float32(other)) => {
                         *data += other;
@@ -190,7 +198,7 @@ pub mod rustpython_ndarray {
         }
     }
 
-    #[pyclass(with(AsMapping))]
+    #[pyclass(with(AsMapping, AsNumber))]
     impl PyNdArray {
         #[pymethod(magic)]
         fn getitem(&self, needle: PyObjectRef, vm: &VirtualMachine) -> PyResult {
