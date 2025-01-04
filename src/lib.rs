@@ -1,6 +1,6 @@
 use num_traits::cast::ToPrimitive;
 
-use ndarray::{ArcArray, Dim, IxDynImpl, SliceInfoElem};
+use ndarray::{ArrayD, Dim, IxDynImpl, SliceInfoElem};
 use rustpython_vm::{
     builtins::{PyInt, PyListRef, PyModule, PyNone, PySlice},
     convert::ToPyObject,
@@ -11,12 +11,10 @@ pub fn make_module(vm: &VirtualMachine) -> PyRef<PyModule> {
     rustpython_ndarray::make_module(vm)
 }
 
-pub type ArcArrayD<T> = ArcArray<T, Dim<IxDynImpl>>;
-
 #[derive(Clone)]
 enum PyNdArrayType {
-    Float32(ArcArrayD<f32>),
-    Float64(ArcArrayD<f64>),
+    Float32(ArrayD<f32>),
+    Float64(ArrayD<f64>),
 }
 
 impl std::fmt::Debug for PyNdArrayType {
@@ -29,10 +27,10 @@ impl std::fmt::Debug for PyNdArrayType {
 }
 
 fn generic_checked_slice<T>(
-    arr: ArcArrayD<T>,
+    arr: ArrayD<T>,
     slice: &[SliceInfoElem],
     vm: &VirtualMachine,
-) -> PyResult<ArcArrayD<T>> {
+) -> PyResult<ArrayD<T>> {
     if slice.len() != arr.ndim() {
         return Err(vm.new_exception_msg(
             vm.ctx.exceptions.runtime_error.to_owned(),
@@ -68,7 +66,7 @@ impl PyNdArrayType {
 
         if let Ok(data) = data_f32 {
             return Ok(Self::Float32(
-                ArcArrayD::from_shape_vec(&*shape, data).map_err(|e| {
+                ArrayD::from_shape_vec(&*shape, data).map_err(|e| {
                     vm.new_exception_msg(vm.ctx.exceptions.runtime_error.to_owned(), e.to_string())
                 })?,
             ));
@@ -76,7 +74,7 @@ impl PyNdArrayType {
 
         let data_f64: Vec<f64> = TryFromObject::try_from_object(vm, data.into())?;
         Ok(Self::Float64(
-            ArcArrayD::from_shape_vec(shape, data_f64).map_err(|e| {
+            ArrayD::from_shape_vec(shape, data_f64).map_err(|e| {
                 vm.new_exception_msg(vm.ctx.exceptions.runtime_error.to_owned(), e.to_string())
             })?,
         ))
@@ -110,7 +108,7 @@ impl PyNdArrayType {
 
     fn get_item_generic<T: ToPyObject + Copy>(
         vm: &VirtualMachine,
-        data: &ArcArrayD<T>,
+        data: &ArrayD<T>,
         key: &[usize],
     ) -> PyResult {
         Ok(vm.new_pyobj(*data.get(&*key).ok_or_else(|| {
@@ -140,7 +138,7 @@ impl PyNdArrayType {
 
     fn set_item_internal<T: ToPyObject + Copy>(
         vm: &VirtualMachine,
-        data: &mut ArcArrayD<T>,
+        data: &mut ArrayD<T>,
         key: &[usize],
         value: T,
     ) -> PyResult<()> {
@@ -220,7 +218,7 @@ fn py_to_slice_info_elem(obj: PyObjectRef, vm: &VirtualMachine) -> PyResult<Slic
 
 #[rustpython_vm::pymodule]
 pub mod rustpython_ndarray {
-    use crate::{py_to_slice_info_elem, ArcArrayD, PySliceInfoElem};
+    use crate::{py_to_slice_info_elem, ArrayD, PySliceInfoElem};
 
     use super::PyNdArrayType;
 
@@ -253,6 +251,7 @@ pub mod rustpython_ndarray {
     #[pyclass(module = "rustpython_ndarray", name = "PyNdArray")]
     struct PyNdArray {
         inner: PyNdArrayType,
+        slices: Vec<Vec<SliceInfoElem>>,
     }
 
     impl std::fmt::Debug for PyNdArray {
@@ -263,7 +262,10 @@ pub mod rustpython_ndarray {
 
     impl PyNdArray {
         fn from_array(inner: PyNdArrayType) -> Self {
-            Self { inner }
+            Self {
+                inner,
+                slices: vec![],
+            }
         }
 
         fn inner_getitem(&self, needle: &PyObject, vm: &VirtualMachine) -> PyResult {
@@ -272,12 +274,25 @@ pub mod rustpython_ndarray {
 
             let slice: Vec<SliceInfoElem> = indices.into_iter().map(|idx| idx.elem).collect();
 
+            if slice.len() != self.inner.ndim() {
+                return Err(vm.new_exception_msg(
+                    vm.ctx.exceptions.runtime_error.to_owned(),
+                    format!(
+                        "Slice has length {} but array has {} dimensions",
+                        slice.len(),
+                        self.inner.ndim()
+                    ),
+                ));
+            }
+
             let sliced_self = self.inner.slice(&slice, vm)?;
 
             if sliced_self.ndim() == 0 {
                 Ok(sliced_self.item(vm))
             } else {
-                Ok(vm.new_pyobj(Self { inner: sliced_self }))
+                let mut slices = self.slices.clone();
+                slices.push(slice);
+                Ok(vm.new_pyobj(Self { inner: sliced_self, slices }))
             }
         }
 
@@ -377,7 +392,10 @@ pub mod rustpython_ndarray {
 
         #[pymethod(magic)]
         fn str(zelf: PyRef<Self>, vm: &VirtualMachine) -> PyResult<PyStrRef> {
-            Ok(vm.ctx.new_str(format!("{:?}", zelf)))
+            Ok(vm.ctx.new_str(match &zelf.inner {
+                PyNdArrayType::Float32(data) => format!("Float32 {}", data),
+                PyNdArrayType::Float64(data) => format!("Float64 {}", data),
+            }))
         }
 
         #[pymethod]
