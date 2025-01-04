@@ -13,27 +13,27 @@ pub fn make_module(vm: &VirtualMachine) -> PyRef<PyModule> {
 }
 
 #[derive(Clone)]
-enum PyNdArrayType {
+enum GenericArrayData {
     Float32(ArrayD<f32>),
     Float64(ArrayD<f64>),
 }
 
-impl std::fmt::Debug for PyNdArrayType {
+impl std::fmt::Debug for GenericArrayData {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            PyNdArrayType::Float32(arr) => writeln!(f, "<PyNdArray f32 {:?}>", arr.dim()),
-            PyNdArrayType::Float64(arr) => writeln!(f, "<PyNdArray f64 {:?}>", arr.dim()),
+            GenericArrayData::Float32(arr) => writeln!(f, "<PyNdArray f32 {:?}>", arr.dim()),
+            GenericArrayData::Float64(arr) => writeln!(f, "<PyNdArray f64 {:?}>", arr.dim()),
         }
     }
 }
 
-impl PyNdArrayType {
+impl GenericArrayData {
     fn item(&self, vm: &VirtualMachine) -> PyObjectRef {
         assert_eq!(self.ndim(), 0);
         let idx = vec![0_usize; self.ndim()];
         match self {
-            PyNdArrayType::Float32(f) => vm.new_pyobj(f.get(idx.as_slice()).copied()),
-            PyNdArrayType::Float64(f) => vm.new_pyobj(f.get(idx.as_slice()).copied()),
+            GenericArrayData::Float32(f) => vm.new_pyobj(f.get(idx.as_slice()).copied()),
+            GenericArrayData::Float64(f) => vm.new_pyobj(f.get(idx.as_slice()).copied()),
         }
     }
 
@@ -60,8 +60,8 @@ impl PyNdArrayType {
 
     fn ndim(&self) -> usize {
         match self {
-            PyNdArrayType::Float32(f) => f.ndim(),
-            PyNdArrayType::Float64(f) => f.ndim(),
+            GenericArrayData::Float32(f) => f.ndim(),
+            GenericArrayData::Float64(f) => f.ndim(),
         }
     }
 
@@ -187,7 +187,7 @@ fn py_to_slice_info_elem(obj: PyObjectRef, vm: &VirtualMachine) -> PyResult<Slic
 pub mod rustpython_ndarray {
     use crate::{py_to_slice_info_elem, ArrayD, PySliceInfoElem};
 
-    use super::PyNdArrayType;
+    use super::GenericArrayData;
 
     use std::sync::{Arc, Mutex};
 
@@ -207,7 +207,7 @@ pub mod rustpython_ndarray {
         shape: PyListRef,
         vm: &VirtualMachine,
     ) -> PyResult<PyNdArray> {
-        Ok(PyNdArray::from_array(PyNdArrayType::from_array(
+        Ok(PyNdArray::from_array(GenericArrayData::from_array(
             data, shape, vm,
         )?))
     }
@@ -216,13 +216,13 @@ pub mod rustpython_ndarray {
     #[derive(PyPayload, Clone)]
     #[pyclass(module = "rustpython_ndarray", name = "PyNdArray")]
     pub(crate) struct PyNdArray {
-        pub(crate) inner: Arc<Mutex<PyNdArrayType>>,
+        pub(crate) data: Arc<Mutex<GenericArrayData>>,
         pub(crate) slices: Vec<Vec<SliceInfoElem>>,
     }
 
     impl std::fmt::Debug for PyNdArray {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            self.inner.fmt(f)
+            self.data.fmt(f)
         }
     }
 
@@ -245,15 +245,15 @@ pub mod rustpython_ndarray {
 
         #[pymethod(magic)]
         fn str(zelf: PyRef<Self>, vm: &VirtualMachine) -> PyResult<PyStrRef> {
-            Ok(vm.ctx.new_str(match &*zelf.inner.as_ref().lock().unwrap() {
-                PyNdArrayType::Float32(data) => format!("Float32 {}", data),
-                PyNdArrayType::Float64(data) => format!("Float64 {}", data),
+            Ok(vm.ctx.new_str(match &*zelf.data.as_ref().lock().unwrap() {
+                GenericArrayData::Float32(data) => format!("Float32 {}", data),
+                GenericArrayData::Float64(data) => format!("Float64 {}", data),
             }))
         }
 
         #[pymethod]
         fn ndim(&self) -> usize {
-            self.inner.lock().unwrap().ndim()
+            self.data.lock().unwrap().ndim()
         }
 
         #[pymethod(magic)]
@@ -311,9 +311,9 @@ pub mod rustpython_ndarray {
 }
 
 impl PyNdArray {
-    fn from_array(inner: PyNdArrayType) -> Self {
+    fn from_array(inner: GenericArrayData) -> Self {
         Self {
-            inner: Arc::new(Mutex::new(inner)),
+            data: Arc::new(Mutex::new(inner)),
             slices: vec![],
         }
     }
@@ -323,7 +323,7 @@ impl PyNdArray {
         slices.push(slice);
 
         Ok(Self {
-            inner: self.inner.clone(),
+            data: self.data.clone(),
             slices,
         })
     }
@@ -334,7 +334,7 @@ impl PyNdArray {
 
         let slice: Vec<SliceInfoElem> = indices.into_iter().map(|idx| idx.elem).collect();
 
-        let ndim = self.inner.lock().unwrap().ndim();
+        let ndim = self.data.lock().unwrap().ndim();
         if slice.len() != ndim {
             return Err(vm.new_exception_msg(
                 vm.ctx.exceptions.runtime_error.to_owned(),
