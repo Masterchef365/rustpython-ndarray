@@ -263,7 +263,7 @@ pub mod rustpython_ndarray {
     impl PyNdArray {
         #[pymethod(magic)]
         fn getitem(&self, needle: PyObjectRef, vm: &VirtualMachine) -> PyResult {
-            self.inner_getitem(&*needle, vm)
+            self.internal_getitem(&*needle, vm)
         }
 
         #[pymethod(magic)]
@@ -273,7 +273,7 @@ pub mod rustpython_ndarray {
             value: PyObjectRef,
             vm: &VirtualMachine,
         ) -> PyResult<()> {
-            self.inner_setitem(&*needle, value, vm)
+            self.internal_setitem(&*needle, value, vm)
         }
 
         #[pymethod(magic)]
@@ -295,7 +295,7 @@ pub mod rustpython_ndarray {
             other: PyObjectRef,
             vm: &VirtualMachine,
         ) -> PyResult<PyRef<Self>> {
-            zelf.inner_iadd(other, vm)?;
+            zelf.internal_iadd(other, vm)?;
             Ok(zelf)
         }
     }
@@ -304,14 +304,14 @@ pub mod rustpython_ndarray {
         fn as_mapping() -> &'static PyMappingMethods {
             static AS_MAPPING: PyMappingMethods = PyMappingMethods {
                 subscript: atomic_func!(|mapping, needle, vm| {
-                    PyNdArray::mapping_downcast(mapping).inner_getitem(needle, vm)
+                    PyNdArray::mapping_downcast(mapping).internal_getitem(needle, vm)
                 }),
                 ass_subscript: atomic_func!(|mapping, needle, value, vm| {
                     let zelf = PyNdArray::mapping_downcast(mapping);
                     if let Some(value) = value {
-                        zelf.inner_setitem(needle, value, vm)
+                        zelf.internal_setitem(needle, value, vm)
                     } else {
-                        //zelf.inner_delitem(needle, vm)
+                        //zelf.internal_delitem(needle, vm)
                         Err(vm.new_exception_msg(
                             vm.ctx.exceptions.runtime_error.to_owned(),
                             "Arrays do not support delete".to_string(),
@@ -333,7 +333,7 @@ pub mod rustpython_ndarray {
         fn as_number() -> &'static rustpython_vm::protocol::PyNumberMethods {
             static AS_MAPPING: PyNumberMethods = PyNumberMethods {
                 inplace_add: Some(|a, b, vm| {
-                    PyNdArray::number_downcast(a.to_number()).inner_iadd(b.to_owned(), vm)?;
+                    PyNdArray::number_downcast(a.to_number()).internal_iadd(b.to_owned(), vm)?;
                     Ok(a.to_owned())
                 }),
                 ..PyNumberMethods::NOT_IMPLEMENTED
@@ -351,7 +351,7 @@ impl PyNdArray {
         }
     }
 
-    fn inner_slice(&self, slice: Vec<SliceInfoElem>, vm: &VirtualMachine) -> PyResult<Self> {
+    fn internal_slice(&self, slice: Vec<SliceInfoElem>, vm: &VirtualMachine) -> PyResult<Self> {
         let inner = self.inner.slice(&slice, vm)?;
 
         let mut slices = self.slices.clone();
@@ -363,7 +363,7 @@ impl PyNdArray {
         })
     }
 
-    fn inner_getitem(&self, needle: &PyObject, vm: &VirtualMachine) -> PyResult {
+    fn internal_getitem(&self, needle: &PyObject, vm: &VirtualMachine) -> PyResult {
         let indices: Vec<PySliceInfoElem> =
             TryFromBorrowedObject::try_from_borrowed_object(vm, needle)?;
 
@@ -379,18 +379,12 @@ impl PyNdArray {
                 ),
             ));
         }
-        let maybe_single_item = self.inner.slice(&slice, vm)?;
 
-        if maybe_single_item.ndim() == 0 {
-            Ok(maybe_single_item.item(vm))
-        } else {
-            let inner_slice = self.inner_slice(slice, vm)?;
-
-            Ok(vm.new_pyobj(inner_slice))
-        }
+        let internal_slice = self.internal_slice(slice, vm)?;
+        Ok(vm.new_pyobj(internal_slice))
     }
 
-    fn inner_setitem(
+    fn internal_setitem(
         &self,
         needle: &PyObject,
         value: PyObjectRef,
@@ -402,7 +396,7 @@ impl PyNdArray {
         let slice: Vec<SliceInfoElem> = indices.into_iter().map(|idx| idx.elem).collect();
 
         /*
-        let mut sliced_self = self.inner_slice(slice, vm)?;
+        let mut sliced_self = self.internal_slice(slice, vm)?;
 
         if let Ok(value) = value.downcast::<PyFloat>() {
             let value = value.to_f64();
@@ -422,7 +416,7 @@ impl PyNdArray {
         Ok(())
     }
 
-    fn inner_iadd(&self, other: PyObjectRef, vm: &VirtualMachine) -> PyResult<()> {
+    fn internal_iadd(&self, other: PyObjectRef, vm: &VirtualMachine) -> PyResult<()> {
         /*
             if let Ok(other) = other.clone().downcast::<PyFloat>() {
                 match &mut *self.inner.borrow_mut() {
