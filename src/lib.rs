@@ -1,3 +1,5 @@
+use std::sync::{Arc, Mutex};
+
 use num_traits::cast::ToPrimitive;
 
 use ndarray::{ArrayD, Dim, IxDynImpl, SliceInfoElem};
@@ -23,29 +25,6 @@ impl std::fmt::Debug for PyNdArrayType {
             PyNdArrayType::Float64(arr) => writeln!(f, "<PyNdArray f64 {:?}>", arr.dim()),
         }
     }
-}
-
-fn generic_checked_slice<T>(
-    arr: ArrayD<T>,
-    slice: &[SliceInfoElem],
-    vm: &VirtualMachine,
-) -> PyResult<ArrayD<T>> {
-    if slice.len() != arr.ndim() {
-        return Err(vm.new_exception_msg(
-            vm.ctx.exceptions.runtime_error.to_owned(),
-            format!(
-                "Slice has {} args but array has {} dimensions",
-                slice.len(),
-                arr.ndim()
-            ),
-        ));
-    }
-
-    if let Err(e) = arr.bounds_check(slice) {
-        return Err(vm.new_exception_msg(vm.ctx.exceptions.runtime_error.to_owned(), e));
-    }
-
-    Ok(arr.slice_move(slice))
 }
 
 impl PyNdArrayType {
@@ -77,17 +56,6 @@ impl PyNdArrayType {
                 vm.new_exception_msg(vm.ctx.exceptions.runtime_error.to_owned(), e.to_string())
             })?,
         ))
-    }
-
-    fn slice(&self, slice: &[SliceInfoElem], vm: &VirtualMachine) -> PyResult<Self> {
-        Ok(match self {
-            PyNdArrayType::Float32(f) => {
-                PyNdArrayType::Float32(generic_checked_slice(f.clone(), slice, vm)?)
-            }
-            PyNdArrayType::Float64(f) => {
-                PyNdArrayType::Float64(generic_checked_slice(f.clone(), slice, vm)?)
-            }
-        })
     }
 
     fn ndim(&self) -> usize {
@@ -221,8 +189,7 @@ pub mod rustpython_ndarray {
 
     use super::PyNdArrayType;
 
-    use std::cell::RefCell;
-    use std::rc::Rc;
+    use std::sync::{Arc, Mutex};
 
     use ndarray::{ArrayView, SliceInfoElem};
     use rustpython_vm::builtins::{PyFloat, PyListRef, PyStrRef};
@@ -249,7 +216,7 @@ pub mod rustpython_ndarray {
     #[derive(PyPayload, Clone)]
     #[pyclass(module = "rustpython_ndarray", name = "PyNdArray")]
     pub(crate) struct PyNdArray {
-        pub(crate) inner: PyNdArrayType,
+        pub(crate) inner: Arc<Mutex<PyNdArrayType>>,
         pub(crate) slices: Vec<Vec<SliceInfoElem>>,
     }
 
@@ -278,7 +245,7 @@ pub mod rustpython_ndarray {
 
         #[pymethod(magic)]
         fn str(zelf: PyRef<Self>, vm: &VirtualMachine) -> PyResult<PyStrRef> {
-            Ok(vm.ctx.new_str(match &zelf.inner {
+            Ok(vm.ctx.new_str(match &*zelf.inner.as_ref().lock().unwrap() {
                 PyNdArrayType::Float32(data) => format!("Float32 {}", data),
                 PyNdArrayType::Float64(data) => format!("Float64 {}", data),
             }))
@@ -286,7 +253,7 @@ pub mod rustpython_ndarray {
 
         #[pymethod]
         fn ndim(&self) -> usize {
-            self.inner.ndim()
+            self.inner.lock().unwrap().ndim()
         }
 
         #[pymethod(magic)]
@@ -346,19 +313,17 @@ pub mod rustpython_ndarray {
 impl PyNdArray {
     fn from_array(inner: PyNdArrayType) -> Self {
         Self {
-            inner,
+            inner: Arc::new(Mutex::new(inner)),
             slices: vec![],
         }
     }
 
     fn internal_slice(&self, slice: Vec<SliceInfoElem>, vm: &VirtualMachine) -> PyResult<Self> {
-        let inner = self.inner.slice(&slice, vm)?;
-
         let mut slices = self.slices.clone();
         slices.push(slice);
 
         Ok(Self {
-            inner,
+            inner: self.inner.clone(),
             slices,
         })
     }
@@ -369,13 +334,14 @@ impl PyNdArray {
 
         let slice: Vec<SliceInfoElem> = indices.into_iter().map(|idx| idx.elem).collect();
 
-        if slice.len() != self.inner.ndim() {
+        let ndim = self.inner.lock().unwrap().ndim();
+        if slice.len() != ndim {
             return Err(vm.new_exception_msg(
                 vm.ctx.exceptions.runtime_error.to_owned(),
                 format!(
                     "Slice has length {} but array has {} dimensions",
                     slice.len(),
-                    self.inner.ndim()
+                    ndim,
                 ),
             ));
         }
