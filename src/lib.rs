@@ -1,10 +1,9 @@
 use num_traits::cast::ToPrimitive;
 
 use ndarray::{ArrayD, Dim, IxDynImpl, SliceInfoElem};
+use rustpython_ndarray::PyNdArray;
 use rustpython_vm::{
-    builtins::{PyInt, PyListRef, PyModule, PyNone, PySlice},
-    convert::ToPyObject,
-    PyObjectRef, PyRef, PyResult, TryFromObject, VirtualMachine,
+    builtins::{PyFloat, PyInt, PyListRef, PyModule, PyNone, PySlice}, convert::ToPyObject, PyObject, PyObjectRef, PyRef, PyResult, TryFromBorrowedObject, TryFromObject, VirtualMachine
 };
 
 pub fn make_module(vm: &VirtualMachine) -> PyRef<PyModule> {
@@ -249,127 +248,14 @@ pub mod rustpython_ndarray {
     #[pyattr]
     #[derive(PyPayload, Clone)]
     #[pyclass(module = "rustpython_ndarray", name = "PyNdArray")]
-    struct PyNdArray {
-        inner: PyNdArrayType,
-        slices: Vec<Vec<SliceInfoElem>>,
+    pub(crate) struct PyNdArray {
+        pub(crate) inner: PyNdArrayType,
+        pub(crate) slices: Vec<Vec<SliceInfoElem>>,
     }
 
     impl std::fmt::Debug for PyNdArray {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
             self.inner.fmt(f)
-        }
-    }
-
-    impl PyNdArray {
-        fn from_array(inner: PyNdArrayType) -> Self {
-            Self {
-                inner,
-                slices: vec![],
-            }
-        }
-
-        fn inner_getitem(&self, needle: &PyObject, vm: &VirtualMachine) -> PyResult {
-            let indices: Vec<PySliceInfoElem> =
-                TryFromBorrowedObject::try_from_borrowed_object(vm, needle)?;
-
-            let slice: Vec<SliceInfoElem> = indices.into_iter().map(|idx| idx.elem).collect();
-
-            if slice.len() != self.inner.ndim() {
-                return Err(vm.new_exception_msg(
-                    vm.ctx.exceptions.runtime_error.to_owned(),
-                    format!(
-                        "Slice has length {} but array has {} dimensions",
-                        slice.len(),
-                        self.inner.ndim()
-                    ),
-                ));
-            }
-
-            let sliced_self = self.inner.slice(&slice, vm)?;
-
-            if sliced_self.ndim() == 0 {
-                Ok(sliced_self.item(vm))
-            } else {
-                let mut slices = self.slices.clone();
-                slices.push(slice);
-                Ok(vm.new_pyobj(Self { inner: sliced_self, slices }))
-            }
-        }
-
-        fn inner_setitem(
-            &self,
-            needle: &PyObject,
-            value: PyObjectRef,
-            vm: &VirtualMachine,
-        ) -> PyResult<()> {
-            let indices: Vec<PySliceInfoElem> =
-                TryFromBorrowedObject::try_from_borrowed_object(vm, needle)?;
-
-            let slice: Vec<SliceInfoElem> = indices.into_iter().map(|idx| idx.elem).collect();
-
-            let mut sliced_self = self.inner.slice(&slice, vm)?;
-            let value = value.downcast::<PyFloat>().map_err(|_| {
-                vm.new_exception_msg(
-                    vm.ctx.exceptions.runtime_error.to_owned(),
-                    "Can only set floats".to_string(),
-                )
-            })?;
-            let value = value.to_f64();
-
-            match &mut sliced_self {
-                PyNdArrayType::Float32(data) => {
-                    data.iter_mut().for_each(|elem| *elem = value as f32)
-                }
-                PyNdArrayType::Float64(data) => data.iter_mut().for_each(|elem| *elem = value),
-            }
-
-            Ok(())
-        }
-
-        fn inner_iadd(&self, other: PyObjectRef, vm: &VirtualMachine) -> PyResult<()> {
-            /*
-                if let Ok(other) = other.clone().downcast::<PyFloat>() {
-                    match &mut *self.inner.borrow_mut() {
-                        PyNdArrayType::Float32(data) => *data += other.to_f64() as f32,
-                        PyNdArrayType::Float64(data) => *data += other.to_f64(),
-                    }
-                }
-
-                if let Ok(other) = other.clone().downcast::<PyNdArray>() {
-                    if Rc::ptr_eq(&other.inner, &self.inner) {
-                        match &mut *self.inner.borrow_mut() {
-                            PyNdArrayType::Float32(data) => *data *= 2.0,
-                            PyNdArrayType::Float64(data) => *data *= 2.0,
-                        }
-                        return Ok(());
-                    }
-
-                    match (&mut *self.inner.borrow_mut(), &*other.inner.borrow()) {
-                        (PyNdArrayType::Float32(data), PyNdArrayType::Float32(other)) => {
-                            *data += other;
-                        }
-                        (PyNdArrayType::Float64(data), PyNdArrayType::Float64(other)) => {
-                            *data += other;
-                        }
-                        _ => {
-                            return Err(vm.new_exception_msg(
-                                    vm.ctx.exceptions.runtime_error.to_owned(),
-                                    "Array datatype mismatch".to_string(),
-                            ))
-                        }
-                    }
-                    Ok(())
-                } else {
-                    Err(vm.new_exception_msg(
-                            vm.ctx.exceptions.runtime_error.to_owned(),
-                            format!(
-                                "Cannot add {self:?} and {}",
-                                other.obj_type().str(vm).unwrap()
-                            ),
-                    ))
-                }
-            */
-            todo!()
         }
     }
 
@@ -454,5 +340,131 @@ pub mod rustpython_ndarray {
             };
             &AS_MAPPING
         }
+    }
+}
+
+impl PyNdArray {
+    fn from_array(inner: PyNdArrayType) -> Self {
+        Self {
+            inner,
+            slices: vec![],
+        }
+    }
+
+    fn inner_slice(&self, slice: Vec<SliceInfoElem>, vm: &VirtualMachine) -> PyResult<Self> {
+        let inner = self.inner.slice(&slice, vm)?;
+
+        let mut slices = self.slices.clone();
+        slices.push(slice);
+
+        Ok(Self {
+            inner,
+            slices,
+        })
+    }
+
+    fn inner_getitem(&self, needle: &PyObject, vm: &VirtualMachine) -> PyResult {
+        let indices: Vec<PySliceInfoElem> =
+            TryFromBorrowedObject::try_from_borrowed_object(vm, needle)?;
+
+        let slice: Vec<SliceInfoElem> = indices.into_iter().map(|idx| idx.elem).collect();
+
+        if slice.len() != self.inner.ndim() {
+            return Err(vm.new_exception_msg(
+                vm.ctx.exceptions.runtime_error.to_owned(),
+                format!(
+                    "Slice has length {} but array has {} dimensions",
+                    slice.len(),
+                    self.inner.ndim()
+                ),
+            ));
+        }
+        let maybe_single_item = self.inner.slice(&slice, vm)?;
+
+        if maybe_single_item.ndim() == 0 {
+            Ok(maybe_single_item.item(vm))
+        } else {
+            let inner_slice = self.inner_slice(slice, vm)?;
+
+            Ok(vm.new_pyobj(inner_slice))
+        }
+    }
+
+    fn inner_setitem(
+        &self,
+        needle: &PyObject,
+        value: PyObjectRef,
+        vm: &VirtualMachine,
+    ) -> PyResult<()> {
+        let indices: Vec<PySliceInfoElem> =
+            TryFromBorrowedObject::try_from_borrowed_object(vm, needle)?;
+
+        let slice: Vec<SliceInfoElem> = indices.into_iter().map(|idx| idx.elem).collect();
+
+        /*
+        let mut sliced_self = self.inner_slice(slice, vm)?;
+
+        if let Ok(value) = value.downcast::<PyFloat>() {
+            let value = value.to_f64();
+
+            match &mut sliced_self {
+                PyNdArrayType::Float32(data) => data.iter_mut().for_each(|elem| *elem = value as f32),
+                PyNdArrayType::Float64(data) => data.iter_mut().for_each(|elem| *elem = value),
+            }
+        }  else {
+            vm.new_exception_msg(
+                vm.ctx.exceptions.runtime_error.to_owned(),
+                "Can only set floats".to_string(),
+            );
+        }
+        */
+
+        Ok(())
+    }
+
+    fn inner_iadd(&self, other: PyObjectRef, vm: &VirtualMachine) -> PyResult<()> {
+        /*
+            if let Ok(other) = other.clone().downcast::<PyFloat>() {
+                match &mut *self.inner.borrow_mut() {
+                    PyNdArrayType::Float32(data) => *data += other.to_f64() as f32,
+                    PyNdArrayType::Float64(data) => *data += other.to_f64(),
+                }
+            }
+
+            if let Ok(other) = other.clone().downcast::<PyNdArray>() {
+                if Rc::ptr_eq(&other.inner, &self.inner) {
+                    match &mut *self.inner.borrow_mut() {
+                        PyNdArrayType::Float32(data) => *data *= 2.0,
+                        PyNdArrayType::Float64(data) => *data *= 2.0,
+                    }
+                    return Ok(());
+                }
+
+                match (&mut *self.inner.borrow_mut(), &*other.inner.borrow()) {
+                    (PyNdArrayType::Float32(data), PyNdArrayType::Float32(other)) => {
+                        *data += other;
+                    }
+                    (PyNdArrayType::Float64(data), PyNdArrayType::Float64(other)) => {
+                        *data += other;
+                    }
+                    _ => {
+                        return Err(vm.new_exception_msg(
+                                vm.ctx.exceptions.runtime_error.to_owned(),
+                                "Array datatype mismatch".to_string(),
+                        ))
+                    }
+                }
+                Ok(())
+            } else {
+                Err(vm.new_exception_msg(
+                        vm.ctx.exceptions.runtime_error.to_owned(),
+                        format!(
+                            "Cannot add {self:?} and {}",
+                            other.obj_type().str(vm).unwrap()
+                        ),
+                ))
+            }
+        */
+        todo!()
     }
 }
