@@ -9,7 +9,6 @@ use rustpython_vm::{
 
 use crate::rustpython_ndarray::PyNdArray;
 
-
 #[derive(Clone)]
 pub enum GenericArray<F32, F64> {
     Float32(F32),
@@ -19,7 +18,6 @@ pub enum GenericArray<F32, F64> {
 pub type GenericArrayData = GenericArray<ArrayD<f32>, ArrayD<f64>>;
 pub type GenericArrayDataView<'a> = GenericArray<ArrayViewD<'a, f32>, ArrayViewD<'a, f64>>;
 pub type GenericArrayDataViewMut<'a> = GenericArray<ArrayViewMutD<'a, f32>, ArrayViewMutD<'a, f64>>;
-
 
 impl std::fmt::Debug for GenericArrayData {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -63,16 +61,28 @@ impl GenericArrayDataViewMut<'_> {
         }
     }
 
-    pub fn set_array(&mut self, source: GenericArrayDataView<'_>, vm: &VirtualMachine) -> PyResult<()> {
+    pub fn set_array(
+        &mut self,
+        source: GenericArrayDataView<'_>,
+        vm: &VirtualMachine,
+    ) -> PyResult<()> {
+        if self.shape() != source.shape() {
+            return Err(vm.new_exception_msg(
+                vm.ctx.exceptions.runtime_error.to_owned(),
+                format!(
+                    "Shape mismatch, cannot assign {:?} to {:?}",
+                    source.shape(),
+                    self.shape(),
+                ),
+            ));
+        }
+
         match (self, source) {
             (GenericArray::Float32(s), GenericArray::Float32(other)) => Ok(s.assign(&other)),
             (GenericArray::Float64(s), GenericArray::Float64(other)) => Ok(s.assign(&other)),
             (s, other) => Err(vm.new_exception_msg(
-                    vm.ctx.exceptions.runtime_error.to_owned(),
-                    format!(
-                        "Type mismatch, cannot assign {:?} to {:?}",
-                        other, s,
-                    ),
+                vm.ctx.exceptions.runtime_error.to_owned(),
+                format!("Type mismatch, cannot assign {:?} to {:?}", other, s,),
             )),
         }
     }
@@ -173,40 +183,45 @@ impl GenericArrayData {
 fn generic_view<'a, T>(
     mut arr: ArrayViewD<'a, T>,
     slices: &[Vec<SliceInfoElem>],
-) -> ArrayViewD<'a, T> {
+) -> Result<ArrayViewD<'a, T>, String> {
     for slice in slices {
+        arr.bounds_check(slice.as_slice())?;
         arr = arr.slice_move(slice.as_slice());
     }
-    arr
+    Ok(arr)
 }
 
-pub fn view<'a>(data: &'a GenericArrayData, slices: &[Vec<SliceInfoElem>]) -> GenericArrayDataView<'a> {
-    match data {
-        GenericArray::Float32(data) => GenericArray::Float32(generic_view(data.view(), slices)),
-        GenericArray::Float64(data) => GenericArray::Float64(generic_view(data.view(), slices)),
-    }
+pub fn view<'a>(
+    data: &'a GenericArrayData,
+    slices: &[Vec<SliceInfoElem>],
+) -> Result<GenericArrayDataView<'a>, String> {
+    Ok(match data {
+        GenericArray::Float32(data) => GenericArray::Float32(generic_view(data.view(), slices)?),
+        GenericArray::Float64(data) => GenericArray::Float64(generic_view(data.view(), slices)?),
+    })
 }
 
 fn generic_view_mut<'a, T>(
     mut arr: ArrayViewMutD<'a, T>,
     slices: &[Vec<SliceInfoElem>],
-) -> ArrayViewMutD<'a, T> {
+) -> Result<ArrayViewMutD<'a, T>, String> {
     for slice in slices {
+        arr.bounds_check(slice.as_slice())?;
         arr = arr.slice_move(slice.as_slice());
     }
-    arr
+    Ok(arr)
 }
 
 pub fn view_mut<'a>(
     data: &'a mut GenericArrayData,
     slices: &[Vec<SliceInfoElem>],
-) -> GenericArrayDataViewMut<'a> {
-    match data {
+) -> Result<GenericArrayDataViewMut<'a>, String> {
+    Ok(match data {
         GenericArray::Float32(data) => {
-            GenericArray::Float32(generic_view_mut(data.view_mut(), slices))
+            GenericArray::Float32(generic_view_mut(data.view_mut(), slices)?)
         }
         GenericArray::Float64(data) => {
-            GenericArray::Float64(generic_view_mut(data.view_mut(), slices))
+            GenericArray::Float64(generic_view_mut(data.view_mut(), slices)?)
         }
-    }
+    })
 }

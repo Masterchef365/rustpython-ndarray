@@ -5,6 +5,7 @@ use num_traits::cast::ToPrimitive;
 use ndarray::{ArrayD, ArrayViewD, ArrayViewMutD};
 use ndarray::{Dim, IxDynImpl, SliceInfoElem};
 use rustpython_ndarray::PyNdArray;
+use rustpython_vm::builtins::PyBaseExceptionRef;
 use rustpython_vm::{
     builtins::{PyFloat, PyInt, PyListRef, PyModule, PyNone, PySlice},
     convert::ToPyObject,
@@ -78,7 +79,7 @@ fn py_to_slice_info_elem(obj: PyObjectRef, vm: &VirtualMachine) -> PyResult<Slic
 
 #[rustpython_vm::pymodule]
 pub mod rustpython_ndarray {
-    use crate::{py_to_slice_info_elem, view, ArrayD, GenericArrayDataView, PySliceInfoElem};
+    use crate::{py_to_slice_info_elem, runtime_error, view, ArrayD, GenericArrayDataView, PySliceInfoElem};
 
     use crate::generic_array::{self, *};
 
@@ -140,18 +141,18 @@ pub mod rustpython_ndarray {
         #[pymethod(magic)]
         fn str(zelf: PyRef<Self>, vm: &VirtualMachine) -> PyResult<PyStrRef> {
             let lck = zelf.data.as_ref().lock().unwrap();
-            let data_view = generic_array::view(&lck, &zelf.slices);
+            let data_view = generic_array::view(&lck, &zelf.slices).map_err(|e| runtime_error(e, vm))?;
             Ok(vm.ctx.new_str(match data_view {
-                GenericArrayDataView::Float32(data) => format!("Float32 {}", data),
-                GenericArrayDataView::Float64(data) => format!("Float64 {}", data),
+                GenericArray::Float32(data) => format!("Float32 {}", data),
+                GenericArray::Float64(data) => format!("Float64 {}", data),
             }))
         }
 
         #[pymethod]
-        fn ndim(&self) -> usize {
+        fn ndim(&self, vm: &VirtualMachine) -> PyResult<usize> {
             let lck = self.data.lock().unwrap();
-            let data_view = view(&lck, &self.slices);
-            data_view.ndim()
+            let data_view = view(&lck, &self.slices).map_err(|e| runtime_error(e, vm))?;
+            Ok(data_view.ndim())
         }
 
         /*
@@ -245,7 +246,7 @@ impl PyNdArray {
         let with_appended_slice = self.append_slice(slice);
 
         let lck = self.data.lock().unwrap();
-        let arr_view = generic_array::view(&lck, &with_appended_slice.slices);
+        let arr_view = view(&lck, &with_appended_slice.slices).map_err(|e| runtime_error(e, vm))?;
 
         if arr_view.ndim() == 0 {
             Ok(arr_view.item(vm))
@@ -264,7 +265,7 @@ impl PyNdArray {
         let with_appended_slice = self.append_slice(slice);
 
         let mut lck = self.data.lock().unwrap();
-        let mut arr_view = view_mut(&mut lck, &with_appended_slice.slices);
+        let mut arr_view = view_mut(&mut lck, &with_appended_slice.slices).map_err(|e| runtime_error(e, vm))?;
 
         if let Ok(number) = value.clone().downcast::<PyFloat>() {
             arr_view.fill(number.to_f64());
@@ -272,7 +273,7 @@ impl PyNdArray {
 
         if let Ok(other) = value.downcast::<PyNdArray>() {
             let mut lck = other.data.lock().unwrap();
-            let other_arr_view = view(&mut lck, &with_appended_slice.slices);
+            let other_arr_view = view(&mut lck, &with_appended_slice.slices).map_err(|e| runtime_error(e, vm))?;
             arr_view.set_array(other_arr_view, vm)?;
 
             Ok(())
@@ -287,4 +288,8 @@ impl PyNdArray {
     fn internal_iadd(&self, other: PyObjectRef, vm: &VirtualMachine) -> PyResult<()> {
         todo!()
     }
+}
+
+fn runtime_error(s: String, vm: &VirtualMachine) -> PyBaseExceptionRef {
+    vm.new_exception_msg(vm.ctx.exceptions.runtime_error.to_owned(), s)
 }
