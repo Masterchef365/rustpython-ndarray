@@ -209,6 +209,7 @@ impl PyNdArray {
 
         if let Ok(number) = value.clone().downcast::<PyFloat>() {
             arr_view.fill(number.to_f64());
+            return Ok(());
         }
 
         if let Ok(other) = value.clone().downcast::<PyNdArray>() {
