@@ -214,7 +214,7 @@ impl PyNdArray {
         if let Ok(other) = value.downcast::<PyNdArray>() {
             let mut lck = other.data.lock().unwrap();
             let other_arr_view =
-                view(&mut lck, &with_appended_slice.slices).map_err(|e| runtime_error(e, vm))?;
+                view(&mut lck, &other.slices).map_err(|e| runtime_error(e, vm))?;
             arr_view.set_array(other_arr_view, vm)?;
 
             Ok(())
