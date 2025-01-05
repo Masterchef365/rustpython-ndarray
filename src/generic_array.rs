@@ -1,13 +1,6 @@
-use std::sync::{Arc, Mutex};
-
+use ndarray::SliceInfoElem;
 use ndarray::{ArrayD, ArrayViewD, ArrayViewMutD};
-use ndarray::{Dim, IxDynImpl, SliceInfoElem};
-use rustpython_vm::{
-    builtins::{PyFloat, PyListRef},
-    PyObjectRef, PyResult, TryFromObject, VirtualMachine,
-};
-
-use crate::rustpython_ndarray::PyNdArray;
+use rustpython_vm::{builtins::PyListRef, PyObjectRef, PyResult, TryFromObject, VirtualMachine};
 
 #[derive(Clone)]
 pub enum GenericArray<F32, F64> {

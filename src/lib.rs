@@ -2,17 +2,14 @@ use std::sync::{Arc, Mutex};
 
 use num_traits::cast::ToPrimitive;
 
-use ndarray::{ArrayD, ArrayViewD, ArrayViewMutD};
-use ndarray::{Dim, IxDynImpl, SliceInfoElem};
+use ndarray::SliceInfoElem;
 use rustpython_ndarray::PyNdArray;
 use rustpython_vm::atomic_func;
 use rustpython_vm::builtins::PyBaseExceptionRef;
 use rustpython_vm::protocol::{PyMappingMethods, PyNumberMethods};
 use rustpython_vm::types::{AsMapping, AsNumber};
 use rustpython_vm::{
-    builtins::{PyFloat, PyInt, PyListRef, PyModule, PyNone, PySlice},
-    convert::ToPyObject,
-    protocol::PyNumber,
+    builtins::{PyFloat, PyInt, PyModule, PyNone, PySlice},
     PyObject, PyObjectRef, PyRef, PyResult, TryFromBorrowedObject, TryFromObject, VirtualMachine,
 };
 
@@ -82,21 +79,16 @@ fn py_to_slice_info_elem(obj: PyObjectRef, vm: &VirtualMachine) -> PyResult<Slic
 
 #[rustpython_vm::pymodule]
 pub mod rustpython_ndarray {
-    use crate::{py_to_slice_info_elem, runtime_error, view, ArrayD, GenericArrayDataView, PySliceInfoElem};
+    use crate::{runtime_error, view};
 
     use crate::generic_array::{self, *};
 
     use std::sync::{Arc, Mutex};
 
-    use ndarray::{ArrayView, SliceInfoElem};
-    use rustpython_vm::builtins::{PyFloat, PyListRef, PyStrRef};
-
-    use rustpython_vm::protocol::{PyMappingMethods, PyNumberMethods};
+    use ndarray::SliceInfoElem;
+    use rustpython_vm::builtins::{PyListRef, PyStrRef};
     use rustpython_vm::types::{AsMapping, AsNumber};
-    use rustpython_vm::{
-        atomic_func, pyclass, PyObject, PyObjectRef, PyPayload, PyRef, PyResult,
-        TryFromBorrowedObject, VirtualMachine,
-    };
+    use rustpython_vm::{pyclass, PyObjectRef, PyPayload, PyRef, PyResult, VirtualMachine};
 
     #[pyfunction]
     fn array_from_list(
@@ -144,7 +136,8 @@ pub mod rustpython_ndarray {
         #[pymethod(magic)]
         fn str(zelf: PyRef<Self>, vm: &VirtualMachine) -> PyResult<PyStrRef> {
             let lck = zelf.data.as_ref().lock().unwrap();
-            let data_view = generic_array::view(&lck, &zelf.slices).map_err(|e| runtime_error(e, vm))?;
+            let data_view =
+                generic_array::view(&lck, &zelf.slices).map_err(|e| runtime_error(e, vm))?;
             Ok(vm.ctx.new_str(match data_view {
                 GenericArray::Float32(data) => format!("Float32 {}", data),
                 GenericArray::Float64(data) => format!("Float64 {}", data),
@@ -190,15 +183,15 @@ impl AsMapping for PyNdArray {
                 } else {
                     //zelf.internal_delitem(needle, vm)
                     Err(vm.new_exception_msg(
-                            vm.ctx.exceptions.runtime_error.to_owned(),
-                            "Arrays do not support delete".to_string(),
+                        vm.ctx.exceptions.runtime_error.to_owned(),
+                        "Arrays do not support delete".to_string(),
                     ))
                 }
             }),
             length: atomic_func!(|_mapping, vm| {
                 Err(vm.new_exception_msg(
-                        vm.ctx.exceptions.runtime_error.to_owned(),
-                        "Arrays do not support len()".to_string(),
+                    vm.ctx.exceptions.runtime_error.to_owned(),
+                    "Arrays do not support len()".to_string(),
                 ))
             }),
         };
@@ -268,7 +261,8 @@ impl PyNdArray {
         let with_appended_slice = self.append_slice(slice);
 
         let mut lck = self.data.lock().unwrap();
-        let mut arr_view = view_mut(&mut lck, &with_appended_slice.slices).map_err(|e| runtime_error(e, vm))?;
+        let mut arr_view =
+            view_mut(&mut lck, &with_appended_slice.slices).map_err(|e| runtime_error(e, vm))?;
 
         if let Ok(number) = value.clone().downcast::<PyFloat>() {
             arr_view.fill(number.to_f64());
@@ -276,14 +270,15 @@ impl PyNdArray {
 
         if let Ok(other) = value.downcast::<PyNdArray>() {
             let mut lck = other.data.lock().unwrap();
-            let other_arr_view = view(&mut lck, &with_appended_slice.slices).map_err(|e| runtime_error(e, vm))?;
+            let other_arr_view =
+                view(&mut lck, &with_appended_slice.slices).map_err(|e| runtime_error(e, vm))?;
             arr_view.set_array(other_arr_view, vm)?;
 
             Ok(())
         } else {
             Err(vm.new_exception_msg(
-                    vm.ctx.exceptions.runtime_error.to_owned(),
-                    "Cannot set array to value".to_string(),
+                vm.ctx.exceptions.runtime_error.to_owned(),
+                "Cannot set array to value".to_string(),
             ))
         }
     }
