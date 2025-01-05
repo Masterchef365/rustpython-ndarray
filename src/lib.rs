@@ -5,7 +5,10 @@ use num_traits::cast::ToPrimitive;
 use ndarray::{Dim, IxDynImpl, SliceInfoElem};
 use rustpython_ndarray::PyNdArray;
 use rustpython_vm::{
-    builtins::{PyFloat, PyInt, PyListRef, PyModule, PyNone, PySlice}, convert::ToPyObject, protocol::PyNumber, PyObject, PyObjectRef, PyRef, PyResult, TryFromBorrowedObject, TryFromObject, VirtualMachine
+    builtins::{PyFloat, PyInt, PyListRef, PyModule, PyNone, PySlice},
+    convert::ToPyObject,
+    protocol::PyNumber,
+    PyObject, PyObjectRef, PyRef, PyResult, TryFromBorrowedObject, TryFromObject, VirtualMachine,
 };
 
 pub fn make_module(vm: &VirtualMachine) -> PyRef<PyModule> {
@@ -27,11 +30,31 @@ type GenericArrayDataViewMut<'a> = GenericArray<ArrayViewMutD<'a, f32>, ArrayVie
 impl std::fmt::Debug for GenericArrayData {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            GenericArrayData::Float32(arr) => writeln!(f, "<PyNdArray f32 {:?}>", arr.dim()),
-            GenericArrayData::Float64(arr) => writeln!(f, "<PyNdArray f64 {:?}>", arr.dim()),
+            GenericArray::Float32(arr) => writeln!(f, "<PyNdArray f32 {:?}>", arr.dim()),
+            GenericArray::Float64(arr) => writeln!(f, "<PyNdArray f64 {:?}>", arr.dim()),
         }
     }
 }
+
+impl std::fmt::Debug for GenericArrayDataViewMut<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            GenericArray::Float32(arr) => writeln!(f, "<PyNdArray f32 {:?}>", arr.dim()),
+            GenericArray::Float64(arr) => writeln!(f, "<PyNdArray f64 {:?}>", arr.dim()),
+        }
+    }
+}
+
+impl std::fmt::Debug for GenericArrayDataView<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            GenericArray::Float32(arr) => writeln!(f, "<PyNdArray f32 {:?}>", arr.dim()),
+            GenericArray::Float64(arr) => writeln!(f, "<PyNdArray f64 {:?}>", arr.dim()),
+        }
+    }
+}
+
+
 
 impl GenericArrayDataViewMut<'_> {
     fn ndim(&self) -> usize {
@@ -48,7 +71,13 @@ impl GenericArrayDataViewMut<'_> {
             match (self, other_view) {
                 (GenericArray::Float32(s), GenericArray::Float32(other)) => s.assign(&other),
                 (GenericArray::Float64(s), GenericArray::Float64(other)) => s.assign(&other),
-                _ => todo!(),
+                (s, other) => return Err(vm.new_exception_msg(
+                    vm.ctx.exceptions.runtime_error.to_owned(),
+                    format!(
+                        "Type mismatch, cannot assign {:?} to {:?}",
+                        other, s,
+                    ),
+                )),
             }
         } else {
             if let Ok(scalar) = value.downcast::<PyFloat>() {
@@ -132,66 +161,6 @@ impl GenericArrayData {
             GenericArrayData::Float64(f) => f.ndim(),
         }
     }
-
-    /*
-    fn get_item(&self, vm: &VirtualMachine, key: &[usize]) -> PyResult {
-        match self {
-            PyNdArrayType::Float32(data) => Self::get_item_generic(vm, data, key),
-            PyNdArrayType::Float64(data) => Self::get_item_generic(vm, data, key),
-        }
-    }
-
-    fn get_item_generic<T: ToPyObject + Copy>(
-        vm: &VirtualMachine,
-        data: &ArrayD<T>,
-        key: &[usize],
-    ) -> PyResult {
-        Ok(vm.new_pyobj(*data.get(&*key).ok_or_else(|| {
-            vm.new_exception_msg(
-                vm.ctx.exceptions.index_error.to_owned(),
-                format!(
-                    "Index {key:?} was out of bounds for array {:?}",
-                    data.shape()
-                )
-                .into(),
-            )
-        })?))
-    }
-
-    fn set_item(&mut self, vm: &VirtualMachine, key: &[usize], value: PyObjectRef) -> PyResult<()> {
-        match self {
-            PyNdArrayType::Float32(data) => {
-                Self::set_item_internal(vm, data, key, TryFromObject::try_from_object(vm, value)?)?
-            }
-            PyNdArrayType::Float64(data) => {
-                Self::set_item_internal(vm, data, key, TryFromObject::try_from_object(vm, value)?)?
-            }
-        }
-
-        Ok(())
-    }
-
-    fn set_item_internal<T: ToPyObject + Copy>(
-        vm: &VirtualMachine,
-        data: &mut ArrayD<T>,
-        key: &[usize],
-        value: T,
-    ) -> PyResult<()> {
-        if let Some(data_val) = data.get_mut(&*key) {
-            *data_val = value;
-            Ok(())
-        } else {
-            Err(vm.new_exception_msg(
-                vm.ctx.exceptions.index_error.to_owned(),
-                format!(
-                    "Index {key:?} was out of bounds for array {:?}",
-                    data.shape()
-                )
-                .into(),
-            ))
-        }
-    }
-    */
 }
 
 fn get_isize(obj: PyObjectRef, vm: &VirtualMachine) -> PyResult<isize> {
