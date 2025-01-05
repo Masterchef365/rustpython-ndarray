@@ -68,6 +68,17 @@ impl GenericArrayDataViewMut<'_> {
         if let Some(other) = value.downcast_ref::<PyNdArray>() {
             let lck = other.data.lock().unwrap();
             let other_view = view(&lck, &other.slices);
+
+            if self.shape() != other_view.shape() {
+                return Err(vm.new_exception_msg(
+                    vm.ctx.exceptions.runtime_error.to_owned(),
+                    format!(
+                        "Dimension mismatch, cannot assign shape {:?} to {:?}",
+                        self.shape(), other.shape(),
+                    ),
+                ));
+            }
+
             match (self, other_view) {
                 (GenericArray::Float32(s), GenericArray::Float32(other)) => s.assign(&other),
                 (GenericArray::Float64(s), GenericArray::Float64(other)) => s.assign(&other),
@@ -90,6 +101,13 @@ impl GenericArrayDataViewMut<'_> {
         }
         Ok(())
     }
+
+    fn shape(&self) -> &[usize] {
+        match self {
+            GenericArray::Float32(f) => f.shape(),
+            GenericArray::Float64(f) => f.shape(),
+        }
+    }
 }
 
 impl GenericArrayDataView<'_> {
@@ -106,6 +124,13 @@ impl GenericArrayDataView<'_> {
         match self {
             GenericArray::Float32(f) => vm.new_pyobj(f.get(idx.as_slice()).copied()),
             GenericArray::Float64(f) => vm.new_pyobj(f.get(idx.as_slice()).copied()),
+        }
+    }
+
+    fn shape(&self) -> &[usize] {
+        match self {
+            GenericArray::Float32(f) => f.shape(),
+            GenericArray::Float64(f) => f.shape(),
         }
     }
 }
@@ -159,6 +184,13 @@ impl GenericArrayData {
         match self {
             GenericArrayData::Float32(f) => f.ndim(),
             GenericArrayData::Float64(f) => f.ndim(),
+        }
+    }
+
+    fn shape(&self) -> &[usize] {
+        match self {
+            GenericArray::Float32(f) => f.shape(),
+            GenericArray::Float64(f) => f.shape(),
         }
     }
 }
@@ -296,6 +328,11 @@ pub mod rustpython_ndarray {
             self.internal_ndim()
         }
 
+        #[pymethod]
+        fn ndim(&self) -> Vec<usize> {
+            self.internal_shape()
+        }
+
         #[pymethod(magic)]
         fn iadd(
             zelf: PyRef<Self>,
@@ -416,10 +453,6 @@ impl PyNdArray {
         })
     }
 
-    fn internal_ndim(&self) -> usize {
-        self.data.lock().unwrap().ndim()
-    }
-
     fn internal_getitem(&self, needle: &PyObject, vm: &VirtualMachine) -> PyResult {
         let slice = parse_indices(needle, vm)?;
         let with_appended_slice = self.append_slice(slice, vm)?;
@@ -450,48 +483,6 @@ impl PyNdArray {
     }
 
     fn internal_iadd(&self, other: PyObjectRef, vm: &VirtualMachine) -> PyResult<()> {
-        /*
-            if let Ok(other) = other.clone().downcast::<PyFloat>() {
-                match &mut *self.inner.borrow_mut() {
-                    PyNdArrayType::Float32(data) => *data += other.to_f64() as f32,
-                    PyNdArrayType::Float64(data) => *data += other.to_f64(),
-                }
-            }
-
-            if let Ok(other) = other.clone().downcast::<PyNdArray>() {
-                if Rc::ptr_eq(&other.inner, &self.inner) {
-                    match &mut *self.inner.borrow_mut() {
-                        PyNdArrayType::Float32(data) => *data *= 2.0,
-                        PyNdArrayType::Float64(data) => *data *= 2.0,
-                    }
-                    return Ok(());
-                }
-
-                match (&mut *self.inner.borrow_mut(), &*other.inner.borrow()) {
-                    (PyNdArrayType::Float32(data), PyNdArrayType::Float32(other)) => {
-                        *data += other;
-                    }
-                    (PyNdArrayType::Float64(data), PyNdArrayType::Float64(other)) => {
-                        *data += other;
-                    }
-                    _ => {
-                        return Err(vm.new_exception_msg(
-                                vm.ctx.exceptions.runtime_error.to_owned(),
-                                "Array datatype mismatch".to_string(),
-                        ))
-                    }
-                }
-                Ok(())
-            } else {
-                Err(vm.new_exception_msg(
-                        vm.ctx.exceptions.runtime_error.to_owned(),
-                        format!(
-                            "Cannot add {self:?} and {}",
-                            other.obj_type().str(vm).unwrap()
-                        ),
-                ))
-            }
-        */
         todo!()
     }
 }
