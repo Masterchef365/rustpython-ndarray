@@ -26,30 +26,38 @@ type GenericArrayData = GenericArray<ArrayD<f32>, ArrayD<f64>>;
 type GenericArrayDataView<'a> = GenericArray<ArrayViewD<'a, f32>, ArrayViewD<'a, f64>>;
 type GenericArrayDataViewMut<'a> = GenericArray<ArrayViewMutD<'a, f32>, ArrayViewMutD<'a, f64>>;
 
-/*
-use ndarray::{ArrayD, ArrayViewD, ArrayViewMutD};
-#[derive(Clone)]
-enum GenericArrayData {
-    Float32(ArrayD<f32>),
-    Float64(ArrayD<f64>),
-}
-
-enum GenericArrayDataView<'a> {
-    Float32(ArrayViewD<'a, f32>),
-    Float64(ArrayViewD<'a, f64>),
-}
-
-enum GenericArrayDataViewMut<'a> {
-    Float32(ArrayViewMutD<'a, f32>),
-    Float64(ArrayViewMutD<'a, f64>),
-}
-*/
-
 impl std::fmt::Debug for GenericArrayData {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             GenericArrayData::Float32(arr) => writeln!(f, "<PyNdArray f32 {:?}>", arr.dim()),
             GenericArrayData::Float64(arr) => writeln!(f, "<PyNdArray f64 {:?}>", arr.dim()),
+        }
+    }
+}
+
+impl GenericArrayDataViewMut<'_> {
+    fn ndim(&self) -> usize {
+        match self {
+            GenericArray::Float32(f) => f.ndim(),
+            GenericArray::Float64(f) => f.ndim(),
+        }
+    }
+}
+
+impl GenericArrayDataView<'_> {
+    fn ndim(&self) -> usize {
+        match self {
+            GenericArray::Float32(f) => f.ndim(),
+            GenericArray::Float64(f) => f.ndim(),
+        }
+    }
+
+    fn item(&self, vm: &VirtualMachine) -> PyObjectRef {
+        assert_eq!(self.ndim(), 0);
+        let idx = vec![0_usize; self.ndim()];
+        match self {
+            GenericArray::Float32(f) => vm.new_pyobj(f.get(idx.as_slice()).copied()),
+            GenericArray::Float64(f) => vm.new_pyobj(f.get(idx.as_slice()).copied()),
         }
     }
 }
@@ -359,6 +367,28 @@ fn generic_view<'a, T>(mut arr: ArrayViewD<'a, T>, slices: &[Vec<SliceInfoElem>]
     arr
 }
 
+fn view<'a>(data: &'a GenericArrayData, slices: &[Vec<SliceInfoElem>]) -> GenericArrayDataView<'a> {
+    match data {
+        GenericArray::Float32(data) => GenericArray::Float32(generic_view(data.view(), slices)),
+        GenericArray::Float64(data) => GenericArray::Float64(generic_view(data.view(), slices)),
+    }
+}
+
+fn generic_view_mut<'a, T>(mut arr: ArrayViewMutD<'a, T>, slices: &[Vec<SliceInfoElem>]) -> ArrayViewMutD<'a, T>  {
+    for slice in slices {
+        arr = arr.slice_move(slice.as_slice());
+    }
+    arr
+}
+
+fn view_mut<'a>(data: &'a mut GenericArrayData, slices: &[Vec<SliceInfoElem>]) -> GenericArrayDataViewMut<'a> {
+    match data {
+        GenericArray::Float32(data) => GenericArray::Float32(generic_view_mut(data.view_mut(), slices)),
+        GenericArray::Float64(data) => GenericArray::Float64(generic_view_mut(data.view_mut(), slices)),
+    }
+}
+
+
 impl PyNdArray {
     fn from_array(inner: GenericArrayData) -> Self {
         Self {
@@ -367,15 +397,7 @@ impl PyNdArray {
         }
     }
 
-    fn view(&self) -> GenericArrayDataView<'_> {
-        let lck = self.data.lock().unwrap();
-        match &*lck {
-            GenericArray::Float32(data) => GenericArray::Float32(generic_view(data.view(), &self.slices)),
-            GenericArray::Float64(data) => GenericArray::Float64(generic_view(data.view(), &self.slices)),
-        }
-    }
-
-    fn internal_slice(&self, slice: Vec<SliceInfoElem>, vm: &VirtualMachine) -> PyResult<Self> {
+    fn append_slice(&self, slice: Vec<SliceInfoElem>, vm: &VirtualMachine) -> PyResult<Self> {
         let mut slices = self.slices.clone();
         slices.push(slice);
 
@@ -392,24 +414,16 @@ impl PyNdArray {
     fn internal_getitem(&self, needle: &PyObject, vm: &VirtualMachine) -> PyResult {
         let indices: Vec<PySliceInfoElem> =
             TryFromBorrowedObject::try_from_borrowed_object(vm, needle)?;
-
         let slice: Vec<SliceInfoElem> = indices.into_iter().map(|idx| idx.elem).collect();
+        let with_appended_slice = self.append_slice(slice, vm)?;
 
-        let ndim = self.internal_ndim();
-        if slice.len() != ndim {
-            return Err(vm.new_exception_msg(
-                vm.ctx.exceptions.runtime_error.to_owned(),
-                format!(
-                    "Slice has length {} but array has {} dimensions",
-                    slice.len(),
-                    ndim,
-                ),
-            ));
+        let lck = self.data.lock().unwrap();
+        let arr_view = view(&lck, &with_appended_slice.slices);
+        if arr_view.ndim() == 0 {
+            Ok(arr_view.item(vm))
+        } else {
+            Ok(vm.new_pyobj(with_appended_slice))
         }
-
-        let internal_slice = self.internal_slice(slice, vm)?;
-
-        Ok(vm.new_pyobj(internal_slice))
     }
 
     fn internal_setitem(
@@ -418,13 +432,13 @@ impl PyNdArray {
         value: PyObjectRef,
         vm: &VirtualMachine,
     ) -> PyResult<()> {
+        /*
         let indices: Vec<PySliceInfoElem> =
             TryFromBorrowedObject::try_from_borrowed_object(vm, needle)?;
 
         let slice: Vec<SliceInfoElem> = indices.into_iter().map(|idx| idx.elem).collect();
 
-        /*
-        let mut sliced_self = self.internal_slice(slice, vm)?;
+        let mut sliced_self = self.append_slice(slice, vm)?;
 
         if let Ok(value) = value.downcast::<PyFloat>() {
             let value = value.to_f64();
@@ -439,9 +453,10 @@ impl PyNdArray {
                 "Can only set floats".to_string(),
             );
         }
-        */
 
         Ok(())
+        */
+        todo!()
     }
 
     fn internal_iadd(&self, other: PyObjectRef, vm: &VirtualMachine) -> PyResult<()> {
