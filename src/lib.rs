@@ -253,7 +253,7 @@ pub mod rustpython_ndarray {
 
         #[pymethod]
         fn ndim(&self) -> usize {
-            self.data.lock().unwrap().ndim()
+            self.internal_ndim()
         }
 
         #[pymethod(magic)]
@@ -328,13 +328,17 @@ impl PyNdArray {
         })
     }
 
+    fn internal_ndim(&self) -> usize {
+        self.data.lock().unwrap().ndim()
+    }
+
     fn internal_getitem(&self, needle: &PyObject, vm: &VirtualMachine) -> PyResult {
         let indices: Vec<PySliceInfoElem> =
             TryFromBorrowedObject::try_from_borrowed_object(vm, needle)?;
 
         let slice: Vec<SliceInfoElem> = indices.into_iter().map(|idx| idx.elem).collect();
 
-        let ndim = self.data.lock().unwrap().ndim();
+        let ndim = self.internal_ndim();
         if slice.len() != ndim {
             return Err(vm.new_exception_msg(
                 vm.ctx.exceptions.runtime_error.to_owned(),
@@ -347,6 +351,7 @@ impl PyNdArray {
         }
 
         let internal_slice = self.internal_slice(slice, vm)?;
+
         Ok(vm.new_pyobj(internal_slice))
     }
 
