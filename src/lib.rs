@@ -5,9 +5,7 @@ use num_traits::cast::ToPrimitive;
 use ndarray::{Dim, IxDynImpl, SliceInfoElem};
 use rustpython_ndarray::PyNdArray;
 use rustpython_vm::{
-    builtins::{PyFloat, PyInt, PyListRef, PyModule, PyNone, PySlice},
-    convert::ToPyObject,
-    PyObject, PyObjectRef, PyRef, PyResult, TryFromBorrowedObject, TryFromObject, VirtualMachine,
+    builtins::{PyFloat, PyInt, PyListRef, PyModule, PyNone, PySlice}, convert::ToPyObject, protocol::PyNumber, PyObject, PyObjectRef, PyRef, PyResult, TryFromBorrowedObject, TryFromObject, VirtualMachine
 };
 
 pub fn make_module(vm: &VirtualMachine) -> PyRef<PyModule> {
@@ -41,6 +39,22 @@ impl GenericArrayDataViewMut<'_> {
             GenericArray::Float32(f) => f.ndim(),
             GenericArray::Float64(f) => f.ndim(),
         }
+    }
+
+    fn set_item(&mut self, value: PyObjectRef, vm: &VirtualMachine) -> PyResult<()> {
+        if let Some(other) = value.downcast_ref::<PyNdArray>() {
+            return todo!();
+        }
+
+        if let Ok(scalar) = value.downcast::<PyFloat>() {
+            let scalar = scalar.to_f64();
+            match self {
+                GenericArray::Float32(f) => f.fill(scalar as f32),
+                GenericArray::Float64(f) => f.fill(scalar),
+            };
+        }
+
+        Ok(())
     }
 }
 
@@ -362,7 +376,10 @@ pub mod rustpython_ndarray {
     }
 }
 
-fn generic_view<'a, T>(mut arr: ArrayViewD<'a, T>, slices: &[Vec<SliceInfoElem>]) -> ArrayViewD<'a, T>  {
+fn generic_view<'a, T>(
+    mut arr: ArrayViewD<'a, T>,
+    slices: &[Vec<SliceInfoElem>],
+) -> ArrayViewD<'a, T> {
     for slice in slices {
         arr = arr.slice_move(slice.as_slice());
     }
@@ -376,20 +393,36 @@ fn view<'a>(data: &'a GenericArrayData, slices: &[Vec<SliceInfoElem>]) -> Generi
     }
 }
 
-fn generic_view_mut<'a, T>(mut arr: ArrayViewMutD<'a, T>, slices: &[Vec<SliceInfoElem>]) -> ArrayViewMutD<'a, T>  {
+fn generic_view_mut<'a, T>(
+    mut arr: ArrayViewMutD<'a, T>,
+    slices: &[Vec<SliceInfoElem>],
+) -> ArrayViewMutD<'a, T> {
     for slice in slices {
         arr = arr.slice_move(slice.as_slice());
     }
     arr
 }
 
-fn view_mut<'a>(data: &'a mut GenericArrayData, slices: &[Vec<SliceInfoElem>]) -> GenericArrayDataViewMut<'a> {
+fn view_mut<'a>(
+    data: &'a mut GenericArrayData,
+    slices: &[Vec<SliceInfoElem>],
+) -> GenericArrayDataViewMut<'a> {
     match data {
-        GenericArray::Float32(data) => GenericArray::Float32(generic_view_mut(data.view_mut(), slices)),
-        GenericArray::Float64(data) => GenericArray::Float64(generic_view_mut(data.view_mut(), slices)),
+        GenericArray::Float32(data) => {
+            GenericArray::Float32(generic_view_mut(data.view_mut(), slices))
+        }
+        GenericArray::Float64(data) => {
+            GenericArray::Float64(generic_view_mut(data.view_mut(), slices))
+        }
     }
 }
 
+fn parse_indices(needle: &PyObject, vm: &VirtualMachine) -> PyResult<Vec<SliceInfoElem>> {
+    let indices: Vec<PySliceInfoElem> =
+        TryFromBorrowedObject::try_from_borrowed_object(vm, needle)?;
+
+    Ok(indices.into_iter().map(|idx| idx.elem).collect())
+}
 
 impl PyNdArray {
     fn from_array(inner: GenericArrayData) -> Self {
@@ -414,13 +447,12 @@ impl PyNdArray {
     }
 
     fn internal_getitem(&self, needle: &PyObject, vm: &VirtualMachine) -> PyResult {
-        let indices: Vec<PySliceInfoElem> =
-            TryFromBorrowedObject::try_from_borrowed_object(vm, needle)?;
-        let slice: Vec<SliceInfoElem> = indices.into_iter().map(|idx| idx.elem).collect();
+        let slice = parse_indices(needle, vm)?;
         let with_appended_slice = self.append_slice(slice, vm)?;
 
         let lck = self.data.lock().unwrap();
         let arr_view = view(&lck, &with_appended_slice.slices);
+
         if arr_view.ndim() == 0 {
             Ok(arr_view.item(vm))
         } else {
@@ -434,31 +466,13 @@ impl PyNdArray {
         value: PyObjectRef,
         vm: &VirtualMachine,
     ) -> PyResult<()> {
-        /*
-        let indices: Vec<PySliceInfoElem> =
-            TryFromBorrowedObject::try_from_borrowed_object(vm, needle)?;
+        let slice = parse_indices(needle, vm)?;
+        let with_appended_slice = self.append_slice(slice, vm)?;
 
-        let slice: Vec<SliceInfoElem> = indices.into_iter().map(|idx| idx.elem).collect();
+        let mut lck = self.data.lock().unwrap();
+        let mut arr_view = view_mut(&mut lck, &with_appended_slice.slices);
 
-        let mut sliced_self = self.append_slice(slice, vm)?;
-
-        if let Ok(value) = value.downcast::<PyFloat>() {
-            let value = value.to_f64();
-
-            match &mut sliced_self {
-                PyNdArrayType::Float32(data) => data.iter_mut().for_each(|elem| *elem = value as f32),
-                PyNdArrayType::Float64(data) => data.iter_mut().for_each(|elem| *elem = value),
-            }
-        }  else {
-            vm.new_exception_msg(
-                vm.ctx.exceptions.runtime_error.to_owned(),
-                "Can only set floats".to_string(),
-            );
-        }
-
-        Ok(())
-        */
-        todo!()
+        arr_view.set_item(value, vm)
     }
 
     fn internal_iadd(&self, other: PyObjectRef, vm: &VirtualMachine) -> PyResult<()> {
