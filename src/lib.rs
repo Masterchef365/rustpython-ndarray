@@ -2,21 +2,48 @@ use std::sync::{Arc, Mutex};
 
 use num_traits::cast::ToPrimitive;
 
-use ndarray::{ArrayD, Dim, IxDynImpl, SliceInfoElem};
+use ndarray::{Dim, IxDynImpl, SliceInfoElem};
 use rustpython_ndarray::PyNdArray;
 use rustpython_vm::{
-    builtins::{PyFloat, PyInt, PyListRef, PyModule, PyNone, PySlice}, convert::ToPyObject, PyObject, PyObjectRef, PyRef, PyResult, TryFromBorrowedObject, TryFromObject, VirtualMachine
+    builtins::{PyFloat, PyInt, PyListRef, PyModule, PyNone, PySlice},
+    convert::ToPyObject,
+    PyObject, PyObjectRef, PyRef, PyResult, TryFromBorrowedObject, TryFromObject, VirtualMachine,
 };
 
 pub fn make_module(vm: &VirtualMachine) -> PyRef<PyModule> {
     rustpython_ndarray::make_module(vm)
 }
 
+use ndarray::{ArrayD, ArrayViewD, ArrayViewMutD};
+
+#[derive(Clone)]
+enum GenericArray<F32, F64> {
+    Float32(F32),
+    Float64(F64),
+}
+
+type GenericArrayData = GenericArray<ArrayD<f32>, ArrayD<f64>>;
+type GenericArrayDataView<'a> = GenericArray<ArrayViewD<'a, f32>, ArrayViewD<'a, f64>>;
+type GenericArrayDataViewMut<'a> = GenericArray<ArrayViewMutD<'a, f32>, ArrayViewMutD<'a, f64>>;
+
+/*
+use ndarray::{ArrayD, ArrayViewD, ArrayViewMutD};
 #[derive(Clone)]
 enum GenericArrayData {
     Float32(ArrayD<f32>),
     Float64(ArrayD<f64>),
 }
+
+enum GenericArrayDataView<'a> {
+    Float32(ArrayViewD<'a, f32>),
+    Float64(ArrayViewD<'a, f64>),
+}
+
+enum GenericArrayDataViewMut<'a> {
+    Float32(ArrayViewMutD<'a, f32>),
+    Float64(ArrayViewMutD<'a, f64>),
+}
+*/
 
 impl std::fmt::Debug for GenericArrayData {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -316,6 +343,10 @@ impl PyNdArray {
             data: Arc::new(Mutex::new(inner)),
             slices: vec![],
         }
+    }
+
+    fn view(&self) -> GenericArrayDataView<'_> {
+        todo!()
     }
 
     fn internal_slice(&self, slice: Vec<SliceInfoElem>, vm: &VirtualMachine) -> PyResult<Self> {
