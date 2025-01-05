@@ -55,6 +55,20 @@ impl std::fmt::Debug for GenericArrayData {
 }
 
 impl GenericArrayData {
+    fn view(&self) -> GenericArrayDataView<'_> {
+        match self {
+            GenericArray::Float32(data) => GenericArray::Float32(data.view()),
+            GenericArray::Float64(data) => GenericArray::Float64(data.view()),
+        }
+    }
+
+    fn view_mut(&mut self) -> GenericArrayDataViewMut<'_> {
+        match self {
+            GenericArray::Float32(data) => GenericArray::Float32(data.view_mut()),
+            GenericArray::Float64(data) => GenericArray::Float64(data.view_mut()),
+        }
+    }
+
     fn item(&self, vm: &VirtualMachine) -> PyObjectRef {
         assert_eq!(self.ndim(), 0);
         let idx = vec![0_usize; self.ndim()];
@@ -239,6 +253,7 @@ pub mod rustpython_ndarray {
         )?))
     }
 
+    /// Provides a sliced representation of an array, where the slices are deferred until needed.
     #[pyattr]
     #[derive(PyPayload, Clone)]
     #[pyclass(module = "rustpython_ndarray", name = "PyNdArray")]
@@ -337,6 +352,13 @@ pub mod rustpython_ndarray {
     }
 }
 
+fn generic_view<'a, T>(mut arr: ArrayViewD<'a, T>, slices: &[Vec<SliceInfoElem>]) -> ArrayViewD<'a, T>  {
+    for slice in slices {
+        arr = arr.slice_move(slice.as_slice());
+    }
+    arr
+}
+
 impl PyNdArray {
     fn from_array(inner: GenericArrayData) -> Self {
         Self {
@@ -346,7 +368,11 @@ impl PyNdArray {
     }
 
     fn view(&self) -> GenericArrayDataView<'_> {
-        todo!()
+        let lck = self.data.lock().unwrap();
+        match &*lck {
+            GenericArray::Float32(data) => GenericArray::Float32(generic_view(data.view(), &self.slices)),
+            GenericArray::Float64(data) => GenericArray::Float64(generic_view(data.view(), &self.slices)),
+        }
     }
 
     fn internal_slice(&self, slice: Vec<SliceInfoElem>, vm: &VirtualMachine) -> PyResult<Self> {
