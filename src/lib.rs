@@ -5,7 +5,10 @@ use num_traits::cast::ToPrimitive;
 use ndarray::{ArrayD, ArrayViewD, ArrayViewMutD};
 use ndarray::{Dim, IxDynImpl, SliceInfoElem};
 use rustpython_ndarray::PyNdArray;
+use rustpython_vm::atomic_func;
 use rustpython_vm::builtins::PyBaseExceptionRef;
+use rustpython_vm::protocol::{PyMappingMethods, PyNumberMethods};
+use rustpython_vm::types::{AsMapping, AsNumber};
 use rustpython_vm::{
     builtins::{PyFloat, PyInt, PyListRef, PyModule, PyNone, PySlice},
     convert::ToPyObject,
@@ -172,47 +175,47 @@ pub mod rustpython_ndarray {
             Ok(zelf)
         }
     }
+}
 
-    impl AsMapping for PyNdArray {
-        fn as_mapping() -> &'static PyMappingMethods {
-            static AS_MAPPING: PyMappingMethods = PyMappingMethods {
-                subscript: atomic_func!(|mapping, needle, vm| {
-                    PyNdArray::mapping_downcast(mapping).internal_getitem(needle, vm)
-                }),
-                ass_subscript: atomic_func!(|mapping, needle, value, vm| {
-                    let zelf = PyNdArray::mapping_downcast(mapping);
-                    if let Some(value) = value {
-                        zelf.internal_setitem(needle, value, vm)
-                    } else {
-                        //zelf.internal_delitem(needle, vm)
-                        Err(vm.new_exception_msg(
+impl AsMapping for PyNdArray {
+    fn as_mapping() -> &'static PyMappingMethods {
+        static AS_MAPPING: PyMappingMethods = PyMappingMethods {
+            subscript: atomic_func!(|mapping, needle, vm| {
+                PyNdArray::mapping_downcast(mapping).internal_getitem(needle, vm)
+            }),
+            ass_subscript: atomic_func!(|mapping, needle, value, vm| {
+                let zelf = PyNdArray::mapping_downcast(mapping);
+                if let Some(value) = value {
+                    zelf.internal_setitem(needle, value, vm)
+                } else {
+                    //zelf.internal_delitem(needle, vm)
+                    Err(vm.new_exception_msg(
                             vm.ctx.exceptions.runtime_error.to_owned(),
                             "Arrays do not support delete".to_string(),
-                        ))
-                    }
-                }),
-                length: atomic_func!(|_mapping, vm| {
-                    Err(vm.new_exception_msg(
+                    ))
+                }
+            }),
+            length: atomic_func!(|_mapping, vm| {
+                Err(vm.new_exception_msg(
                         vm.ctx.exceptions.runtime_error.to_owned(),
                         "Arrays do not support len()".to_string(),
-                    ))
-                }),
-            };
-            &AS_MAPPING
-        }
+                ))
+            }),
+        };
+        &AS_MAPPING
     }
+}
 
-    impl AsNumber for PyNdArray {
-        fn as_number() -> &'static rustpython_vm::protocol::PyNumberMethods {
-            static AS_MAPPING: PyNumberMethods = PyNumberMethods {
-                inplace_add: Some(|a, b, vm| {
-                    PyNdArray::number_downcast(a.to_number()).internal_iadd(b.to_owned(), vm)?;
-                    Ok(a.to_owned())
-                }),
-                ..PyNumberMethods::NOT_IMPLEMENTED
-            };
-            &AS_MAPPING
-        }
+impl AsNumber for PyNdArray {
+    fn as_number() -> &'static rustpython_vm::protocol::PyNumberMethods {
+        static AS_MAPPING: PyNumberMethods = PyNumberMethods {
+            inplace_add: Some(|a, b, vm| {
+                PyNdArray::number_downcast(a.to_number()).internal_iadd(b.to_owned(), vm)?;
+                Ok(a.to_owned())
+            }),
+            ..PyNumberMethods::NOT_IMPLEMENTED
+        };
+        &AS_MAPPING
     }
 }
 
@@ -279,8 +282,8 @@ impl PyNdArray {
             Ok(())
         } else {
             Err(vm.new_exception_msg(
-                vm.ctx.exceptions.runtime_error.to_owned(),
-                "Cannot set array to value".to_string(),
+                    vm.ctx.exceptions.runtime_error.to_owned(),
+                    "Cannot set array to value".to_string(),
             ))
         }
     }
