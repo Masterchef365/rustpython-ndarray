@@ -234,7 +234,7 @@ fn py_to_slice_info_elem(obj: PyObjectRef, vm: &VirtualMachine) -> PyResult<Slic
 
 #[rustpython_vm::pymodule]
 pub mod rustpython_ndarray {
-    use crate::{py_to_slice_info_elem, ArrayD, PySliceInfoElem};
+    use crate::{py_to_slice_info_elem, view, ArrayD, GenericArrayDataView, PySliceInfoElem};
 
     use super::GenericArrayData;
 
@@ -295,9 +295,11 @@ pub mod rustpython_ndarray {
 
         #[pymethod(magic)]
         fn str(zelf: PyRef<Self>, vm: &VirtualMachine) -> PyResult<PyStrRef> {
-            Ok(vm.ctx.new_str(match &*zelf.data.as_ref().lock().unwrap() {
-                GenericArrayData::Float32(data) => format!("Float32 {}", data),
-                GenericArrayData::Float64(data) => format!("Float64 {}", data),
+            let lck = zelf.data.as_ref().lock().unwrap();
+            let data_view = view(&lck, &zelf.slices);
+            Ok(vm.ctx.new_str(match data_view {
+                GenericArrayDataView::Float32(data) => format!("Float32 {}", data),
+                GenericArrayDataView::Float64(data) => format!("Float64 {}", data),
             }))
         }
 
