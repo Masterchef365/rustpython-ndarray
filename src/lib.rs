@@ -1,7 +1,4 @@
 use std::sync::{Arc, Mutex};
-
-use num_traits::cast::ToPrimitive;
-
 use ndarray::SliceInfoElem;
 use rustpython_ndarray::PyNdArray;
 use rustpython_vm::atomic_func;
@@ -9,73 +6,19 @@ use rustpython_vm::builtins::PyBaseExceptionRef;
 use rustpython_vm::protocol::{PyMappingMethods, PyNumberMethods};
 use rustpython_vm::types::{AsMapping, AsNumber};
 use rustpython_vm::{
-    builtins::{PyFloat, PyInt, PyModule, PyNone, PySlice},
-    PyObject, PyObjectRef, PyRef, PyResult, TryFromBorrowedObject, TryFromObject, VirtualMachine,
+    builtins::{PyFloat, PyModule},
+    PyObject, PyObjectRef, PyRef, PyResult, TryFromBorrowedObject, VirtualMachine,
 };
 
 pub fn make_module(vm: &VirtualMachine) -> PyRef<PyModule> {
     rustpython_ndarray::make_module(vm)
 }
 
+mod py_slice_info_elem;
+use py_slice_info_elem::PySliceInfoElem;
+
 mod generic_array;
 use generic_array::*;
-
-fn get_isize(obj: PyObjectRef, vm: &VirtualMachine) -> PyResult<isize> {
-    let py_int = obj.downcast::<PyInt>().or_else(|_| {
-        Err(vm.new_exception_msg(
-            vm.ctx.exceptions.runtime_error.to_owned(),
-            "Indices must be integers".to_string(),
-        ))
-    })?;
-
-    py_int.as_bigint().to_isize().ok_or_else(|| {
-        vm.new_exception_msg(
-            vm.ctx.exceptions.runtime_error.to_owned(),
-            "Index cannot convert to isize".to_string(),
-        )
-    })
-}
-
-#[derive(Clone, Copy)]
-struct PySliceInfoElem {
-    elem: SliceInfoElem,
-}
-
-impl TryFromObject for PySliceInfoElem {
-    fn try_from_object(vm: &VirtualMachine, obj: PyObjectRef) -> PyResult<Self> {
-        Ok(Self {
-            elem: py_to_slice_info_elem(obj, vm)?,
-        })
-    }
-}
-
-fn py_to_slice_info_elem(obj: PyObjectRef, vm: &VirtualMachine) -> PyResult<SliceInfoElem> {
-    if let Ok(index) = get_isize(obj.clone(), vm) {
-        return Ok(SliceInfoElem::Index(index));
-    }
-
-    if let Ok(slice) = obj.clone().downcast::<PySlice>() {
-        // TODO: Check for invalid types
-        let start = slice.start.clone().and_then(|i| get_isize(i, vm).ok());
-        let end = get_isize(slice.stop.clone(), vm).ok();
-        let step = slice.step.clone().and_then(|i| get_isize(i, vm).ok());
-
-        return Ok(SliceInfoElem::Slice {
-            start: start.unwrap_or(0),
-            end,
-            step: step.unwrap_or(1),
-        });
-    }
-
-    if let Ok(_) = obj.downcast::<PyNone>() {
-        return Ok(SliceInfoElem::NewAxis);
-    }
-
-    Err(vm.new_exception_msg(
-        vm.ctx.exceptions.runtime_error.to_owned(),
-        "Invalid slice index type".to_string(),
-    ))
-}
 
 #[rustpython_vm::pymodule]
 pub mod rustpython_ndarray {
@@ -216,7 +159,7 @@ fn parse_indices(needle: &PyObject, vm: &VirtualMachine) -> PyResult<Vec<SliceIn
     let indices: Vec<PySliceInfoElem> =
         TryFromBorrowedObject::try_from_borrowed_object(vm, needle)?;
 
-    Ok(indices.into_iter().map(|idx| idx.elem).collect())
+    Ok(indices.into_iter().map(|idx| idx.0).collect())
 }
 
 impl PyNdArray {
