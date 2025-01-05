@@ -43,17 +43,22 @@ impl GenericArrayDataViewMut<'_> {
 
     fn set_item(&mut self, value: PyObjectRef, vm: &VirtualMachine) -> PyResult<()> {
         if let Some(other) = value.downcast_ref::<PyNdArray>() {
-            return todo!();
+            let lck = other.data.lock().unwrap();
+            let other_view = view(&lck, &other.slices);
+            match (self, other_view) {
+                (GenericArray::Float32(s), GenericArray::Float32(other)) => s.assign(&other),
+                (GenericArray::Float64(s), GenericArray::Float64(other)) => s.assign(&other),
+                _ => todo!(),
+            }
+        } else {
+            if let Ok(scalar) = value.downcast::<PyFloat>() {
+                let scalar = scalar.to_f64();
+                match self {
+                    GenericArray::Float32(f) => f.fill(scalar as f32),
+                    GenericArray::Float64(f) => f.fill(scalar),
+                };
+            }
         }
-
-        if let Ok(scalar) = value.downcast::<PyFloat>() {
-            let scalar = scalar.to_f64();
-            match self {
-                GenericArray::Float32(f) => f.fill(scalar as f32),
-                GenericArray::Float64(f) => f.fill(scalar),
-            };
-        }
-
         Ok(())
     }
 }
