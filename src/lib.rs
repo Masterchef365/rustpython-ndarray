@@ -211,7 +211,7 @@ impl PyNdArray {
             arr_view.fill(number.to_f64());
         }
 
-        if let Ok(other) = value.downcast::<PyNdArray>() {
+        if let Ok(other) = value.clone().downcast::<PyNdArray>() {
             let mut lck = other.data.lock().unwrap();
             let other_arr_view =
                 view(&mut lck, &other.slices).map_err(|e| runtime_error(e, vm))?;
@@ -221,7 +221,7 @@ impl PyNdArray {
         } else {
             Err(vm.new_exception_msg(
                 vm.ctx.exceptions.runtime_error.to_owned(),
-                "Cannot set array to value".to_string(),
+                format!("Cannot set array to value of type {}", value.class().name())
             ))
         }
     }
