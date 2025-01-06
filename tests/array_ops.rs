@@ -22,10 +22,20 @@ fn run_code(source: &'static str) {
     let interp = get_interpreter();
     interp.enter(|vm| {
         let scope = vm.new_scope_with_builtins();
+        let ndarray = vm.import("ndarray", 0).unwrap();
+        scope.globals.set_item("ndarray", ndarray.clone(), vm).unwrap();
+        scope.globals.set_item("nd", ndarray, vm).unwrap();
+
         vm.run_block_expr(scope, &source)
             .map_err(|e| write_exception(e, vm))
             .unwrap();
     })
+}
+
+fn write_exception(excp: PyBaseExceptionRef, vm: &VirtualMachine) -> String {
+    let mut s = String::new();
+    vm.write_exception(&mut s, &excp).unwrap();
+    s
 }
 
 #[test]
@@ -39,9 +49,8 @@ fn basicer() {
     run_code("fail");
 }
 
-
-fn write_exception(excp: PyBaseExceptionRef, vm: &VirtualMachine) -> String {
-    let mut s = String::new();
-    vm.write_exception(&mut s, &excp).unwrap();
-    s
+#[test]
+fn imported() {
+    run_code("ndarray");
+    run_code("nd");
 }
