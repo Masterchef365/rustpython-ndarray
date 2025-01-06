@@ -1,6 +1,6 @@
 use std::sync::{Arc, Mutex};
 use ndarray::SliceInfoElem;
-use rustpython_ndarray::PyNdArray;
+use pyndarray::PyNdArray;
 use rustpython_vm::atomic_func;
 use rustpython_vm::builtins::PyBaseExceptionRef;
 use rustpython_vm::protocol::{PyMappingMethods, PyNumberMethods};
@@ -11,7 +11,7 @@ use rustpython_vm::{
 };
 
 pub fn make_module(vm: &VirtualMachine) -> PyRef<PyModule> {
-    rustpython_ndarray::make_module(vm)
+    pyndarray::make_module(vm)
 }
 
 mod py_slice_info_elem;
@@ -21,7 +21,7 @@ mod generic_array;
 use generic_array::*;
 
 #[rustpython_vm::pymodule]
-pub mod rustpython_ndarray {
+pub mod pyndarray {
     use crate::{runtime_error, view};
 
     use crate::generic_array::{self, *};
@@ -47,7 +47,7 @@ pub mod rustpython_ndarray {
     /// Provides a sliced representation of an array, where the slices are deferred until needed.
     #[pyattr]
     #[derive(PyPayload, Clone)]
-    #[pyclass(module = "rustpython_ndarray", name = "PyNdArray")]
+    #[pyclass(module = "pyndarray", name = "PyNdArray")]
     pub(crate) struct PyNdArray {
         pub(crate) data: Arc<Mutex<GenericArrayData>>,
         pub(crate) slices: Vec<Vec<SliceInfoElem>>,
