@@ -200,31 +200,53 @@ impl PyNdArray {
         value: PyObjectRef,
         vm: &VirtualMachine,
     ) -> PyResult<()> {
+        // Get the indices and slice ourself with them
         let slice = parse_indices(needle, vm)?;
         let with_appended_slice = self.append_slice(slice);
 
         let mut lck = self.data.lock().unwrap();
+
+        // If we're assigning from a slice of ourself, make a silent clone
+        // TODO: Slow(?)
+        let mut self_clone: Option<GenericArrayData> = None;
+        if let Ok(other) = value.clone().downcast::<PyNdArray>() {
+            if Arc::ptr_eq(&self.data, &other.data) {
+                self_clone = Some(lck.clone());
+            }
+        }
+
+        // View the array at the slice
         let mut arr_view =
             view_mut(&mut lck, &with_appended_slice.slices).map_err(|e| runtime_error(e, vm))?;
 
+        // If it's a scalar, fill with it
         if let Ok(number) = value.clone().downcast::<PyFloat>() {
             arr_view.fill(number.to_f64());
             return Ok(());
         }
 
+        // If it's another array ....
         if let Ok(other) = value.clone().downcast::<PyNdArray>() {
-            let mut lck = other.data.lock().unwrap();
-            let other_arr_view =
-                view(&mut lck, &other.slices).map_err(|e| runtime_error(e, vm))?;
-            arr_view.set_array(other_arr_view, vm)?;
+            // If it's us, use the clone we made
+            if let Some(self_clone) = self_clone {
+                let self_arr_view =
+                    view(&self_clone, &other.slices).map_err(|e| runtime_error(e, vm))?;
+                arr_view.set_array(self_arr_view, vm)?;
+            } else {
+                // If it's another array, slice it
+                let mut lck = other.data.lock().unwrap();
+                let other_arr_view =
+                    view(&mut lck, &other.slices).map_err(|e| runtime_error(e, vm))?;
+                arr_view.set_array(other_arr_view, vm)?;
+            }
 
-            Ok(())
-        } else {
-            Err(vm.new_exception_msg(
-                vm.ctx.exceptions.runtime_error.to_owned(),
-                format!("Cannot set array to value of type {}", value.class().name())
-            ))
-        }
+            return Ok(());
+        } 
+            
+        return Err(vm.new_exception_msg(
+            vm.ctx.exceptions.runtime_error.to_owned(),
+            format!("Cannot set array to value of type {}", value.class().name())
+        ));
     }
 
     fn internal_iadd(&self, other: PyObjectRef, vm: &VirtualMachine) -> PyResult<()> {
