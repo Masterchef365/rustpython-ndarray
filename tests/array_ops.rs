@@ -54,3 +54,10 @@ fn imported() {
     run_code("ndarray");
     run_code("nd");
 }
+
+#[test]
+fn array_from_list() {
+    run_code("a = nd.array_from_list([1.0], [])");
+    run_code("a = nd.array_from_list([1.0], [1])");
+    run_code("a = nd.array_from_list([1.0], [1,1,1])");
+}
