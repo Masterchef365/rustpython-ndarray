@@ -1,3 +1,62 @@
+#![allow(warnings)]
+
+use rustpython_vm::{builtins::PyModule, PyRef, VirtualMachine};
+
+pub fn make_module(vm: &VirtualMachine) -> PyRef<PyModule> {
+    pyndarray::make_module(vm)
+}
+
+
+use std::sync::{Arc, RwLock};
+
+macro_rules! impl_pyndarray_dtype {
+    ($pynd_type_name:ident, $pynd_numeric_type:ident) => {
+
+        /// Provides a sliced representation of an array, where the slices are deferred until needed.
+        //#[pyattr]
+        #[derive(PyPayload, Clone, Debug)]
+        #[pyclass(module = "pyndarray", name = "$pynd_type_name")]
+        pub(crate) struct $pynd_type_name {
+            //pub(crate) data: PyNdArray<$pynd_numeric_type>,
+        }
+
+        //#[pyclass(with(AsMapping, AsNumber))]
+        #[pyclass]
+        impl $pynd_type_name {
+            #[pymethod(magic)]
+            fn getitem(&self, needle: PyObjectRef, vm: &VirtualMachine) -> PyResult {
+                todo!()
+                //self.internal_getitem(&*needle, vm)
+            }
+        }
+    };
+}
+
+#[rustpython_vm::pymodule]
+pub mod pyndarray {
+    use super::*;
+    use builtins::PyListRef;
+    use rustpython_vm::*;
+
+    #[pyfunction]
+    fn zeros(
+        shape: PyListRef,
+        vm: &VirtualMachine,
+    ) -> PyResult<PyNdArrayFloat32> {
+        Ok(PyNdArrayFloat32 {})
+    }
+
+
+    impl_pyndarray_dtype!(PyNdArrayFloat32, f32);
+}
+
+#[derive(Debug, Clone)]
+pub struct PyNdArray<T> {
+    pub slices: Vec<Vec<usize>>,
+    pub data: Arc<RwLock<ndarray::ArrayD<T>>>,
+}
+
+/*
 use std::sync::{Arc, Mutex};
 use ndarray::SliceInfoElem;
 use pyndarray::PyNdArray;
@@ -257,3 +316,4 @@ impl PyNdArray {
 fn runtime_error(s: String, vm: &VirtualMachine) -> PyBaseExceptionRef {
     vm.new_exception_msg(vm.ctx.exceptions.runtime_error.to_owned(), s)
 }
+*/
