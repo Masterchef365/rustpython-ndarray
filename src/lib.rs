@@ -1,6 +1,6 @@
 #![allow(warnings)]
 
-use rustpython_vm::{builtins::PyModule, PyRef, VirtualMachine};
+use rustpython_vm::{builtins::PyModule, PyObjectRef, PyRef, VirtualMachine};
 
 pub fn make_module(vm: &VirtualMachine) -> PyRef<PyModule> {
     pyndarray::make_module(vm)
@@ -9,34 +9,29 @@ pub fn make_module(vm: &VirtualMachine) -> PyRef<PyModule> {
 
 use std::sync::{Arc, RwLock};
 
-macro_rules! impl_pyndarray_dtype {
-    ($pynd_type_name:ident, $pynd_numeric_type:ident) => {
+#[rustpython_vm::pymodule]
+pub mod pyndarray {
+    use super::*;
+    use builtins::PyListRef;
+    use rustpython_vm::*;
 
         /// Provides a sliced representation of an array, where the slices are deferred until needed.
         //#[pyattr]
         #[derive(PyPayload, Clone, Debug)]
-        #[pyclass(module = "pyndarray", name = "$pynd_type_name")]
-        pub(crate) struct $pynd_type_name {
+        #[pyclass(module = "pyndarray", name = "PyNdArrayFloat32", no_attr)]
+        pub(crate) struct PyNdArrayFloat32 {
             //pub(crate) data: PyNdArray<$pynd_numeric_type>,
         }
 
         //#[pyclass(with(AsMapping, AsNumber))]
         #[pyclass]
-        impl $pynd_type_name {
+        impl PyNdArrayFloat32 {
             #[pymethod(magic)]
             fn getitem(&self, needle: PyObjectRef, vm: &VirtualMachine) -> PyResult {
                 todo!()
                 //self.internal_getitem(&*needle, vm)
             }
         }
-    };
-}
-
-#[rustpython_vm::pymodule]
-pub mod pyndarray {
-    use super::*;
-    use builtins::PyListRef;
-    use rustpython_vm::*;
 
     #[pyfunction]
     fn zeros(
@@ -45,9 +40,6 @@ pub mod pyndarray {
     ) -> PyResult<PyNdArrayFloat32> {
         Ok(PyNdArrayFloat32 {})
     }
-
-
-    impl_pyndarray_dtype!(PyNdArrayFloat32, f32);
 }
 
 #[derive(Debug, Clone)]
