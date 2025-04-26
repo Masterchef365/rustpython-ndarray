@@ -1,11 +1,15 @@
 #![allow(warnings)]
 
-use rustpython_vm::{builtins::PyModule, PyObjectRef, PyRef, VirtualMachine};
+use rustpython_vm::{
+    builtins::{PyInt, PyList, PyModule}, class::PyClassImpl, convert::ToPyObject, PyObjectRef, PyRef, PyResult, VirtualMachine
+};
 
 pub fn make_module(vm: &VirtualMachine) -> PyRef<PyModule> {
-    pyndarray::make_module(vm)
+    let mut module = pyndarray::make_module(vm);
+    //module.set_attr("PyNdArrayFloat32", pyndarray::PyNdArrayFloat32::make_class(&vm.ctx), vm);
+    pyndarray::PyNdArrayFloat32::make_class(&vm.ctx);
+    module
 }
-
 
 use std::sync::{Arc, RwLock};
 
@@ -15,37 +19,79 @@ pub mod pyndarray {
     use builtins::PyListRef;
     use rustpython_vm::*;
 
-        /// Provides a sliced representation of an array, where the slices are deferred until needed.
-        //#[pyattr]
-        #[derive(PyPayload, Clone, Debug)]
-        #[pyclass(module = "pyndarray", name = "PyNdArrayFloat32", no_attr)]
-        pub(crate) struct PyNdArrayFloat32 {
-            //pub(crate) data: PyNdArray<$pynd_numeric_type>,
-        }
-
-        //#[pyclass(with(AsMapping, AsNumber))]
-        #[pyclass]
-        impl PyNdArrayFloat32 {
-            #[pymethod(magic)]
-            fn getitem(&self, needle: PyObjectRef, vm: &VirtualMachine) -> PyResult {
-                todo!()
-                //self.internal_getitem(&*needle, vm)
+    macro_rules! build_pyarray {
+        () => {
+            #[derive(PyPayload, Clone, Debug)]
+            #[pyclass(module = "pyndarray", name = "PyNdArrayFloat32")]
+            pub(crate) struct PyNdArrayFloat32 {
+                pub(crate) arr: PyNdArray<f32>,
             }
-        }
+
+            //#[pyclass(with(AsMapping))]
+            #[pyclass]
+            impl PyNdArrayFloat32 {
+                #[pymethod(magic)]
+                fn getitem(&self, needle: PyObjectRef, vm: &VirtualMachine) -> PyResult {
+                    self.arr.getitem(needle, vm)
+                }
+            }
+        };
+    }
+
+    build_pyarray!();
 
     #[pyfunction]
-    fn zeros(
-        shape: PyListRef,
-        vm: &VirtualMachine,
-    ) -> PyResult<PyNdArrayFloat32> {
-        Ok(PyNdArrayFloat32 {})
+    fn zeros(shape: PyListRef, vm: &VirtualMachine) -> PyResult<PyNdArrayFloat32> {
+        let shape = py_shape_to_rust(shape.into(), vm)?;
+
+        Ok(PyNdArrayFloat32 { arr: PyNdArray::from_array(ndarray::ArrayD::zeros(shape)) })
     }
 }
 
+fn py_shape_to_rust(shape: PyObjectRef, vm: &VirtualMachine) -> PyResult<Vec<usize>> {
+    shape
+        .downcast::<PyList>()
+        .map_err(|_| vm.new_runtime_error("Shape must be integer list".into()))?
+        .borrow_vec()
+        .iter()
+        .map(|pyobject| {
+            pyobject
+                .downcast_ref::<PyInt>()
+                .ok_or_else(|| vm.new_runtime_error("Indices must be usize".into()))
+                .map(|i| i.as_bigint().try_into().unwrap())
+        })
+        .collect::<PyResult<_>>()
+}
+
+/// Provides a sliced representation of an array, where the slices are deferred until needed.
 #[derive(Debug, Clone)]
 pub struct PyNdArray<T> {
     pub slices: Vec<Vec<usize>>,
     pub data: Arc<RwLock<ndarray::ArrayD<T>>>,
+}
+
+impl<T: ToPyObject + Copy> PyNdArray<T> {
+    pub fn from_array(data: ndarray::ArrayD<T>) -> Self {
+        Self {
+            slices: vec![],
+            data: Arc::new(RwLock::new(data)),
+        }
+    }
+
+    fn getitem(&self, needle: PyObjectRef, vm: &VirtualMachine) -> PyResult {
+        let data = self.data.read().unwrap();
+        /*
+        for slice in self.slices {
+            data.slice(&slice)
+        }
+        */
+        let indices = py_shape_to_rust(needle, vm)?;
+        let value = data
+            .get(indices.as_slice())
+            .ok_or_else(|| vm.new_runtime_error("Invalid index".into()))?;
+
+        Ok(value.to_pyobject(vm))
+    }
 }
 
 /*
@@ -292,8 +338,8 @@ impl PyNdArray {
             }
 
             return Ok(());
-        } 
-            
+        }
+
         return Err(vm.new_exception_msg(
             vm.ctx.exceptions.runtime_error.to_owned(),
             format!("Cannot set array to value of type {}", value.class().name())
