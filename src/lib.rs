@@ -34,7 +34,7 @@ pub mod pyndarray {
     macro_rules! build_pyarray {
         ($primitive:ident, $dtype:ident) => {
             #[derive(PyPayload, Clone, Debug)]
-            #[pyclass(module = "pyndarray", name = "$dtype")]
+            #[pyclass(module = "pyndarray", name)]
             pub(crate) struct $dtype {
                 pub(crate) arr: PyNdArray<$primitive>,
             }
