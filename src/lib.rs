@@ -26,21 +26,22 @@ use std::{
 #[rustpython_vm::pymodule]
 pub mod pyndarray {
     use super::*;
-    use builtins::PyListRef;
+    use builtins::{PyListRef, PyStr, PyStrRef};
+    use function::OptionalArg;
     use rustpython_vm::types::AsMapping;
     use rustpython_vm::*;
 
     macro_rules! build_pyarray {
-        () => {
+        ($primitive:ident, $dtype:ident) => {
             #[derive(PyPayload, Clone, Debug)]
-            #[pyclass(module = "pyndarray", name = "PyNdArrayFloat32")]
-            pub(crate) struct PyNdArrayFloat32 {
-                pub(crate) arr: PyNdArray<f32>,
+            #[pyclass(module = "pyndarray", name = "$dtype")]
+            pub(crate) struct $dtype {
+                pub(crate) arr: PyNdArray<$primitive>,
             }
 
             //#[pyclass]
             #[pyclass(with(AsMapping))]
-            impl PyNdArrayFloat32 {
+            impl $dtype {
                 #[pymethod(magic)]
                 fn getitem(&self, needle: PyObjectRef, vm: &VirtualMachine) -> PyResult {
                     self.arr.getitem(needle, vm)
@@ -57,15 +58,14 @@ pub mod pyndarray {
                 }
             }
 
-            impl AsMapping for PyNdArrayFloat32 {
+            impl AsMapping for $dtype {
                 fn as_mapping() -> &'static PyMappingMethods {
                     static AS_MAPPING: PyMappingMethods = PyMappingMethods {
                         subscript: atomic_func!(|mapping, needle, vm| {
-                            PyNdArrayFloat32::mapping_downcast(mapping)
-                                .getitem(needle.to_pyobject(vm), vm)
+                            $dtype::mapping_downcast(mapping).getitem(needle.to_pyobject(vm), vm)
                         }),
                         ass_subscript: atomic_func!(|mapping, needle, value, vm| {
-                            let zelf = PyNdArrayFloat32::mapping_downcast(mapping);
+                            let zelf = $dtype::mapping_downcast(mapping);
                             if let Some(value) = value {
                                 zelf.setitem(needle.to_pyobject(vm), value, vm)
                             } else {
@@ -86,18 +86,31 @@ pub mod pyndarray {
                     &AS_MAPPING
                 }
             }
+
+            impl From<PyNdArray<$primitive>> for $dtype {
+                fn from(arr: PyNdArray<$primitive>) -> Self {
+                    Self { arr }
+                }
+            }
         };
     }
 
-    build_pyarray!();
+    build_pyarray!(f32, PyNdArrayFloat32);
+    build_pyarray!(f64, PyNdArrayFloat64);
 
     #[pyfunction]
-    fn zeros(shape: PyObjectRef, vm: &VirtualMachine) -> PyResult<PyNdArrayFloat32> {
+    fn zeros(shape: PyObjectRef, dtype: OptionalArg<PyStrRef>, vm: &VirtualMachine) -> PyResult<PyObjectRef> {
         let shape = py_shape_to_rust(shape.into(), vm)?;
 
-        Ok(PyNdArrayFloat32 {
-            arr: PyNdArray::from_array(ndarray::ArrayD::zeros(shape)),
-        })
+        match dtype.as_option().map(|s| s.as_str()) {
+            Some("float64") => Ok(PyNdArrayFloat64::from(PyNdArray::from_array(
+                ndarray::ArrayD::zeros(shape),
+            )).to_pyobject(vm)),
+            None | Some("float32") => Ok(PyNdArrayFloat32::from(PyNdArray::from_array(
+                ndarray::ArrayD::zeros(shape),
+            )).to_pyobject(vm)),
+            Some(other) => Err(vm.new_runtime_error(format!("Unrecognized dtype {other}"))),
+        }
     }
 }
 
