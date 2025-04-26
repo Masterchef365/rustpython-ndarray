@@ -2,13 +2,13 @@
 
 use rustpython_vm::{
     atomic_func,
-    builtins::{PyInt, PyList, PyModule, PyTuple},
+    builtins::{PyInt, PyList, PyModule, PyStr, PyTuple},
     class::PyClassImpl,
     convert::ToPyObject,
     object::PyObjectPayload,
     protocol::PyMappingMethods,
     types::AsMapping,
-    PyObjectRef, PyRef, PyResult, TryFromObject, VirtualMachine,
+    PyObject, PyObjectRef, PyRef, PyResult, TryFromObject, VirtualMachine,
 };
 
 pub fn make_module(vm: &VirtualMachine) -> PyRef<PyModule> {
@@ -22,8 +22,15 @@ pub fn make_module(vm: &VirtualMachine) -> PyRef<PyModule> {
 
 use std::{
     borrow::Borrow,
+    str::FromStr,
     sync::{Arc, RwLock},
 };
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum DataType {
+    Float32,
+    Float64,
+}
 
 #[rustpython_vm::pymodule]
 pub mod pyndarray {
@@ -101,26 +108,27 @@ pub mod pyndarray {
     build_pyarray!(f64, PyNdArrayFloat64);
 
     #[pyfunction]
-    fn zeros(
-        shape: PyObjectRef,
-        mut kw: KwArgs,
-        vm: &VirtualMachine,
-    ) -> PyResult<PyObjectRef> {
+    fn zeros(shape: PyObjectRef, mut kw: KwArgs, vm: &VirtualMachine) -> PyResult<PyObjectRef> {
         let dtype = kw.pop_kwarg("dtype");
 
         let shape = py_shape_to_rust(shape.into(), vm)?;
 
-        let s = dtype.and_then(|s| s.downcast::<PyStr>().ok()).map(|s| s.as_str().to_owned());
-        match s.as_ref().map(|s| s.as_str()) {
-            Some("float64") => Ok(PyNdArrayFloat64::from(PyNdArray::from_array(
+        let dtype = dtype
+            .map(|dtype| {
+                DataType::from_pyobject(&dtype)
+                    .ok_or_else(|| vm.new_runtime_error(format!("Unrecognized dtype {dtype:?}")))
+            })
+            .transpose()?;
+
+        match dtype {
+            Some(DataType::Float64) => Ok(PyNdArrayFloat64::from(PyNdArray::from_array(
                 ndarray::ArrayD::zeros(shape),
             ))
             .to_pyobject(vm)),
-            None | Some("float32") => Ok(PyNdArrayFloat32::from(PyNdArray::from_array(
+            None | Some(DataType::Float32) => Ok(PyNdArrayFloat32::from(PyNdArray::from_array(
                 ndarray::ArrayD::zeros(shape),
             ))
             .to_pyobject(vm)),
-            _ => Err(vm.new_runtime_error(format!("Unrecognized dtype {s:?}"))),
         }
     }
 }
@@ -202,6 +210,17 @@ impl<T: TryFromObject + Copy> PyNdArray<T> {
         *cell = TryFromObject::try_from_object(vm, value)?;
 
         Ok(())
+    }
+}
+
+impl DataType {
+    fn from_pyobject(obj: &PyObject) -> Option<Self> {
+        // TODO: Casts from float and integer primitives
+        match obj.downcast_ref::<PyStr>()?.as_str() {
+            "float64" => Some(Self::Float64),
+            "float32" => Some(Self::Float32),
+            _ => None,
+        }
     }
 }
 
