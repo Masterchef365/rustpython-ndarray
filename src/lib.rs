@@ -15,6 +15,8 @@ pub fn make_module(vm: &VirtualMachine) -> PyRef<PyModule> {
     let mut module = pyndarray::make_module(vm);
     //module.set_attr("PyNdArrayFloat32", pyndarray::PyNdArrayFloat32::make_class(&vm.ctx), vm);
     pyndarray::PyNdArrayFloat32::make_class(&vm.ctx);
+    pyndarray::PyNdArrayFloat64::make_class(&vm.ctx);
+
     module
 }
 
@@ -27,7 +29,7 @@ use std::{
 pub mod pyndarray {
     use super::*;
     use builtins::{PyListRef, PyStr, PyStrRef};
-    use function::OptionalArg;
+    use function::{KwArgs, OptionalArg};
     use rustpython_vm::types::AsMapping;
     use rustpython_vm::*;
 
@@ -99,17 +101,26 @@ pub mod pyndarray {
     build_pyarray!(f64, PyNdArrayFloat64);
 
     #[pyfunction]
-    fn zeros(shape: PyObjectRef, dtype: OptionalArg<PyStrRef>, vm: &VirtualMachine) -> PyResult<PyObjectRef> {
+    fn zeros(
+        shape: PyObjectRef,
+        mut kw: KwArgs,
+        vm: &VirtualMachine,
+    ) -> PyResult<PyObjectRef> {
+        let dtype = kw.pop_kwarg("dtype");
+
         let shape = py_shape_to_rust(shape.into(), vm)?;
 
-        match dtype.as_option().map(|s| s.as_str()) {
+        let s = dtype.and_then(|s| s.downcast::<PyStr>().ok()).map(|s| s.as_str().to_owned());
+        match s.as_ref().map(|s| s.as_str()) {
             Some("float64") => Ok(PyNdArrayFloat64::from(PyNdArray::from_array(
                 ndarray::ArrayD::zeros(shape),
-            )).to_pyobject(vm)),
+            ))
+            .to_pyobject(vm)),
             None | Some("float32") => Ok(PyNdArrayFloat32::from(PyNdArray::from_array(
                 ndarray::ArrayD::zeros(shape),
-            )).to_pyobject(vm)),
-            Some(other) => Err(vm.new_runtime_error(format!("Unrecognized dtype {other}"))),
+            ))
+            .to_pyobject(vm)),
+            _ => Err(vm.new_runtime_error(format!("Unrecognized dtype {s:?}"))),
         }
     }
 }
