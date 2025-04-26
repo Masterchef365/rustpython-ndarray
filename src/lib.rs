@@ -1,7 +1,14 @@
 #![allow(warnings)]
 
 use rustpython_vm::{
-    builtins::{PyInt, PyList, PyModule}, class::PyClassImpl, convert::ToPyObject, PyObjectRef, PyRef, PyResult, VirtualMachine
+    atomic_func,
+    builtins::{PyInt, PyList, PyModule, PyTuple},
+    class::PyClassImpl,
+    convert::ToPyObject,
+    object::PyObjectPayload,
+    protocol::PyMappingMethods,
+    types::AsMapping,
+    PyObjectRef, PyRef, PyResult, TryFromObject, VirtualMachine,
 };
 
 pub fn make_module(vm: &VirtualMachine) -> PyRef<PyModule> {
@@ -11,12 +18,16 @@ pub fn make_module(vm: &VirtualMachine) -> PyRef<PyModule> {
     module
 }
 
-use std::sync::{Arc, RwLock};
+use std::{
+    borrow::Borrow,
+    sync::{Arc, RwLock},
+};
 
 #[rustpython_vm::pymodule]
 pub mod pyndarray {
     use super::*;
     use builtins::PyListRef;
+    use rustpython_vm::types::AsMapping;
     use rustpython_vm::*;
 
     macro_rules! build_pyarray {
@@ -27,12 +38,52 @@ pub mod pyndarray {
                 pub(crate) arr: PyNdArray<f32>,
             }
 
-            //#[pyclass(with(AsMapping))]
-            #[pyclass]
+            //#[pyclass]
+            #[pyclass(with(AsMapping))]
             impl PyNdArrayFloat32 {
                 #[pymethod(magic)]
                 fn getitem(&self, needle: PyObjectRef, vm: &VirtualMachine) -> PyResult {
                     self.arr.getitem(needle, vm)
+                }
+
+                #[pymethod(magic)]
+                fn setitem(
+                    &self,
+                    needle: PyObjectRef,
+                    value: PyObjectRef,
+                    vm: &VirtualMachine,
+                ) -> PyResult<()> {
+                    self.arr.setitem(needle, value, vm)
+                }
+            }
+
+            impl AsMapping for PyNdArrayFloat32 {
+                fn as_mapping() -> &'static PyMappingMethods {
+                    static AS_MAPPING: PyMappingMethods = PyMappingMethods {
+                        subscript: atomic_func!(|mapping, needle, vm| {
+                            PyNdArrayFloat32::mapping_downcast(mapping)
+                                .getitem(needle.to_pyobject(vm), vm)
+                        }),
+                        ass_subscript: atomic_func!(|mapping, needle, value, vm| {
+                            let zelf = PyNdArrayFloat32::mapping_downcast(mapping);
+                            if let Some(value) = value {
+                                zelf.setitem(needle.to_pyobject(vm), value, vm)
+                            } else {
+                                //zelf.internal_delitem(needle, vm)
+                                Err(vm.new_exception_msg(
+                                    vm.ctx.exceptions.runtime_error.to_owned(),
+                                    "Arrays do not support delete".to_string(),
+                                ))
+                            }
+                        }),
+                        length: atomic_func!(|_mapping, vm| {
+                            Err(vm.new_exception_msg(
+                                vm.ctx.exceptions.runtime_error.to_owned(),
+                                "Arrays do not support len()".to_string(),
+                            ))
+                        }),
+                    };
+                    &AS_MAPPING
                 }
             }
         };
@@ -41,24 +92,34 @@ pub mod pyndarray {
     build_pyarray!();
 
     #[pyfunction]
-    fn zeros(shape: PyListRef, vm: &VirtualMachine) -> PyResult<PyNdArrayFloat32> {
+    fn zeros(shape: PyObjectRef, vm: &VirtualMachine) -> PyResult<PyNdArrayFloat32> {
         let shape = py_shape_to_rust(shape.into(), vm)?;
 
-        Ok(PyNdArrayFloat32 { arr: PyNdArray::from_array(ndarray::ArrayD::zeros(shape)) })
+        Ok(PyNdArrayFloat32 {
+            arr: PyNdArray::from_array(ndarray::ArrayD::zeros(shape)),
+        })
     }
 }
 
 fn py_shape_to_rust(shape: PyObjectRef, vm: &VirtualMachine) -> PyResult<Vec<usize>> {
+    if let Some(int) = shape.downcast_ref::<PyInt>() {
+        return Ok(vec![int
+            .as_bigint()
+            .try_into()
+            .map_err(|e| vm.new_runtime_error(format!("{e}")))?]);
+    }
+
     shape
-        .downcast::<PyList>()
-        .map_err(|_| vm.new_runtime_error("Shape must be integer list".into()))?
-        .borrow_vec()
+        .downcast::<PyTuple>()
+        .map_err(|_| vm.new_runtime_error("Shape must be integer tuple".into()))?
         .iter()
         .map(|pyobject| {
-            pyobject
+            Ok(pyobject
                 .downcast_ref::<PyInt>()
-                .ok_or_else(|| vm.new_runtime_error("Indices must be usize".into()))
-                .map(|i| i.as_bigint().try_into().unwrap())
+                .ok_or_else(|| vm.new_runtime_error("Indices must be usize".into()))?
+                .as_bigint()
+                .try_into()
+                .map_err(|e| vm.new_runtime_error(format!("{e}")))?)
         })
         .collect::<PyResult<_>>()
 }
@@ -70,14 +131,16 @@ pub struct PyNdArray<T> {
     pub data: Arc<RwLock<ndarray::ArrayD<T>>>,
 }
 
-impl<T: ToPyObject + Copy> PyNdArray<T> {
+impl<T: Copy> PyNdArray<T> {
     pub fn from_array(data: ndarray::ArrayD<T>) -> Self {
         Self {
             slices: vec![],
             data: Arc::new(RwLock::new(data)),
         }
     }
+}
 
+impl<T: ToPyObject + Copy> PyNdArray<T> {
     fn getitem(&self, needle: PyObjectRef, vm: &VirtualMachine) -> PyResult {
         let data = self.data.read().unwrap();
         /*
@@ -91,6 +154,30 @@ impl<T: ToPyObject + Copy> PyNdArray<T> {
             .ok_or_else(|| vm.new_runtime_error("Invalid index".into()))?;
 
         Ok(value.to_pyobject(vm))
+    }
+}
+
+impl<T: TryFromObject + Copy> PyNdArray<T> {
+    fn setitem(
+        &self,
+        needle: PyObjectRef,
+        value: PyObjectRef,
+        vm: &VirtualMachine,
+    ) -> PyResult<()> {
+        let indices = py_shape_to_rust(needle, vm)?;
+        let mut data = self.data.write().unwrap();
+        /*
+        for slice in self.slices {
+            data.slice(&slice)
+        }
+        */
+
+        let cell = data
+            .get_mut(indices.as_slice())
+            .ok_or_else(|| vm.new_runtime_error("Invalid index".into()))?;
+        *cell = TryFromObject::try_from_object(vm, value)?;
+
+        Ok(())
     }
 }
 
