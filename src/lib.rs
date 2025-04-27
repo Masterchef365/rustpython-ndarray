@@ -281,18 +281,20 @@ impl<T: ToPyObject + Copy> PyNdArray<T> {
 }
 
 impl<T: TryFromObject + Copy> PyNdArray<T> {
-    setitem(
+    fn setitem(
         &self,
         needle: PyObjectRef,
         value: PyObjectRef,
         vm: &VirtualMachine,
     ) -> PyResult<()> {
         let last_slice = py_index_to_sliceinfo(needle, vm)?;
+        let value: T = TryFromObject::try_from_object(vm, value)?;
 
-        let value = self.write(|sliced| {
-            sliced.slice_move(&last_slice).([]).copied().ok_or_else(|| {
+        self.write(|sliced| {
+            *sliced.slice_move(&last_slice).get_mut([]).copied().ok_or_else(|| {
                 vm.new_runtime_error(format!("Array has dimension {:?}", sliced.dim()))
-            })
+            })? = value;
+            Ok(())
         })?;
 
         Ok(value.to_pyobject(vm))
