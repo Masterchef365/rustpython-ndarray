@@ -195,11 +195,9 @@ impl<T: Copy> PyNdArray<T> {
 
         let mut arr_slice = arr.slice(default_slice);
 
-        /*
         for slice in &self.slices {
-            arr_slice = arr_slice.slice(slice);
+            arr_slice = arr_slice.slice_move(slice);
         }
-        */
 
         readfn(arr_slice);
     }
