@@ -157,22 +157,17 @@ pub fn py_index_elem_to_sliceinfo_elem(
     elem: PyObjectRef,
     vm: &VirtualMachine,
 ) -> PyResult<SliceInfoElem> {
-    //dbg!(&elem);
-
     if let Some(int) = elem.downcast_ref::<PyInt>() {
         return Ok(SliceInfoElem::Index(pyint_to_isize(int, vm)?));
     }
 
     if let Some(slice) = elem.downcast_ref::<PySlice>() {
-        eprintln!("stop");
         let stop = py_obj_elem_to_isize(&slice.stop, vm)?;
-        eprintln!("start");
         let start = slice
             .start
             .as_ref()
             .and_then(|start| py_obj_elem_to_isize(start, vm).transpose())
             .transpose()?;
-        eprintln!("step");
         let step = slice
             .step
             .as_ref()
@@ -190,7 +185,7 @@ pub fn py_index_elem_to_sliceinfo_elem(
 
 /// Converts a PyObject to a DynamicSlice
 pub fn py_index_to_sliceinfo(shape: PyObjectRef, vm: &VirtualMachine) -> PyResult<DynamicSlice> {
-    if let Ok(single) = dbg!(py_index_elem_to_sliceinfo_elem(shape.clone(), vm)) {
+    if let Ok(single) = py_index_elem_to_sliceinfo_elem(shape.clone(), vm) {
         return Ok(DynamicSlice::try_from(vec![single]).unwrap());
     }
 
