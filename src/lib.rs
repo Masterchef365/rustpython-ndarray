@@ -22,9 +22,7 @@ pub fn make_module(vm: &VirtualMachine) -> PyRef<PyModule> {
 }
 
 use std::{
-    borrow::Borrow,
-    str::FromStr,
-    sync::{Arc, RwLock},
+    borrow::Borrow, fmt::Display, str::FromStr, sync::{Arc, RwLock}
 };
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -65,6 +63,11 @@ pub mod pyndarray {
                     vm: &VirtualMachine,
                 ) -> PyResult<()> {
                     self.arr.setitem(needle, value, vm)
+                }
+
+                #[pymethod(magic)]
+                fn str(zelf: PyRef<Self>, vm: &VirtualMachine) -> PyResult<PyStrRef> {
+                    Ok(vm.ctx.new_str(zelf.arr.to_string()))
                 }
             }
 
@@ -136,7 +139,7 @@ pub mod pyndarray {
 
 type DynamicSlice = SliceInfo<Vec<SliceInfoElem>, IxDyn, IxDyn>;
 
-fn py_index_elem_to_isize(int: &PyInt, vm: &VirtualMachine) -> PyResult<isize> {
+fn pyint_to_isize(int: &PyInt, vm: &VirtualMachine) -> PyResult<isize> {
     int.as_bigint()
         .try_into()
         .map_err(|e| vm.new_runtime_error(format!("{e}")))
@@ -146,7 +149,7 @@ fn py_obj_elem_to_isize(obj: &PyObject, vm: &VirtualMachine) -> PyResult<isize> 
     let int: &PyInt = obj
         .downcast_ref::<PyInt>()
         .ok_or_else(|| vm.new_runtime_error("Indices must be isize".to_string()))?;
-    py_index_elem_to_isize(int, vm)
+    pyint_to_isize(int, vm)
 }
 
 fn py_index_elem_to_sliceinfo_elem(
@@ -154,7 +157,7 @@ fn py_index_elem_to_sliceinfo_elem(
     vm: &VirtualMachine,
 ) -> PyResult<SliceInfoElem> {
     if let Some(int) = elem.downcast_ref::<PyInt>() {
-        return Ok(SliceInfoElem::Index(py_index_elem_to_isize(int, vm)?));
+        return Ok(SliceInfoElem::Index(pyint_to_isize(int, vm)?));
     }
 
     if let Some(slice) = elem.downcast_ref::<PySlice>() {
@@ -221,7 +224,7 @@ pub struct PyNdArray<T> {
     pub data: Arc<RwLock<ndarray::ArrayD<T>>>,
 }
 
-impl<T: Copy> PyNdArray<T> {
+impl<T> PyNdArray<T> {
     pub fn from_array(data: ndarray::ArrayD<T>) -> Self {
         Self {
             slices: vec![],
@@ -229,7 +232,7 @@ impl<T: Copy> PyNdArray<T> {
         }
     }
 
-    pub fn read<F>(&self, mut readfn: impl FnMut(ArrayViewD<'_, T>)) {
+    pub fn read<U>(&self, mut readfn: impl FnMut(ArrayViewD<'_, T>) -> U) -> U {
         let mut arr = self.data.read().unwrap();
 
         let default_slice = vec![SliceInfoElem::from(..); arr.ndim()];
@@ -241,10 +244,10 @@ impl<T: Copy> PyNdArray<T> {
             arr_slice = arr_slice.slice_move(slice);
         }
 
-        readfn(arr_slice);
+        readfn(arr_slice)
     }
 
-    pub fn write<F>(&self, mut writefn: impl Fn(ArrayViewMutD<'_, T>)) {
+    pub fn write<U>(&self, mut writefn: impl Fn(ArrayViewMutD<'_, T>) -> U) -> U {
         let mut arr = self.data.write().unwrap();
 
         let default_slice = vec![SliceInfoElem::from(..); arr.ndim()];
@@ -256,7 +259,7 @@ impl<T: Copy> PyNdArray<T> {
             arr_slice = arr_slice.slice_move(slice);
         }
 
-        writefn(arr_slice);
+        writefn(arr_slice)
     }
 }
 
@@ -298,6 +301,12 @@ impl<T: TryFromObject + Copy> PyNdArray<T> {
         *cell = TryFromObject::try_from_object(vm, value)?;
 
         Ok(())
+    }
+}
+
+impl<T: Display> Display for PyNdArray<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.read(|slice| write!(f, "{slice}"))
     }
 }
 
