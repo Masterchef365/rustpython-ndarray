@@ -1,6 +1,6 @@
 #![allow(warnings)]
 
-use ndarray::{ArrayViewD, IxDyn, SliceInfo, SliceInfoElem};
+use ndarray::{ArrayViewD, ArrayViewMutD, IxDyn, SliceInfo, SliceInfoElem};
 use rustpython_vm::{
     atomic_func,
     builtins::{PyInt, PyList, PyModule, PyStr, PyTuple},
@@ -187,7 +187,7 @@ impl<T: Copy> PyNdArray<T> {
         }
     }
 
-    pub fn read<F>(&self, mut readfn: impl Fn(ArrayViewD<'_, T>)) {
+    pub fn read<F>(&self, mut readfn: impl FnMut(ArrayViewD<'_, T>)) {
         let mut arr = self.data.read().unwrap();
 
         let default_slice = vec![SliceInfoElem::from(..); arr.ndim()];
@@ -200,6 +200,21 @@ impl<T: Copy> PyNdArray<T> {
         }
 
         readfn(arr_slice);
+    }
+
+    pub fn write<F>(&self, mut writefn: impl Fn(ArrayViewMutD<'_, T>)) {
+        let mut arr = self.data.write().unwrap();
+
+        let default_slice = vec![SliceInfoElem::from(..); arr.ndim()];
+        let default_slice = DynamicSlice::try_from(default_slice).unwrap();
+
+        let mut arr_slice = arr.slice_mut(default_slice);
+
+        for slice in &self.slices {
+            arr_slice = arr_slice.slice_move(slice);
+        }
+
+        writefn(arr_slice);
     }
 }
 
