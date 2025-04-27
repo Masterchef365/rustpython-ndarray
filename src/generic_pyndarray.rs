@@ -63,24 +63,41 @@ impl<T> PyNdArray<T> {
 
         writefn(arr_slice)
     }
+
+    pub fn append_slice(&self, slice: DynamicSlice) -> Self {
+        let mut slices = self.slices.clone();
+        slices.push(slice);
+        Self {
+            slices,
+            unsliced: self.unsliced.clone(),
+        }
+    }
 }
 
 impl<T: ToPyObject + Copy> PyNdArray<T> {
     /// getitem, as implemented in the rustpython interface
-    pub fn getitem(&self, needle: PyObjectRef, vm: &VirtualMachine) -> PyResult {
+    pub fn getitem(&self, needle: PyObjectRef, vm: &VirtualMachine) -> PyResult
+    where
+        PyNdArray<T>: GenericArray,
+    {
         let last_slice = py_index_to_sliceinfo(needle, vm)?;
 
-        let value = self.read(|sliced| {
-            sliced.slice(&last_slice).get([]).copied().ok_or_else(|| {
-                vm.new_runtime_error(format!("Array has dimension {:?}", sliced.dim()))
-            })
-        })?;
+        self.read(|sliced| {
+            let sliced = sliced.slice(&last_slice);
 
-        Ok(value.to_pyobject(vm))
+            if sliced.ndim() == 0 {
+                Ok(sliced.get([]).copied().unwrap().to_pyobject(vm))
+            } else {
+                Ok(self.append_slice(last_slice.clone()).cast().to_pyobject(vm))
+            }
+        })
     }
 }
 
-impl<T: TryFromObject + Copy> PyNdArray<T> where PyNdArray<T>: GenericArray {
+impl<T: TryFromObject + Copy> PyNdArray<T>
+where
+    PyNdArray<T>: GenericArray,
+{
     /// setitem, as implemented in the rustpython interface
     pub fn setitem(
         &self,
@@ -91,8 +108,9 @@ impl<T: TryFromObject + Copy> PyNdArray<T> where PyNdArray<T>: GenericArray {
         let last_slice = py_index_to_sliceinfo(needle, vm)?;
 
         if let Some(other_array) = value.downcast_ref::<<Self as GenericArray>::PyArray>() {
-            self.write(|mut sliced| {
-            });
+            todo!();
+
+            self.write(|mut sliced| {});
 
             return Ok(());
         }
@@ -200,5 +218,3 @@ pub fn py_shape_to_rust(shape: PyObjectRef, vm: &VirtualMachine) -> PyResult<Vec
         })
         .collect::<PyResult<_>>()
 }
-
-

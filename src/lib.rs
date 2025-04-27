@@ -29,7 +29,8 @@ pub enum DataType {
 }
 
 pub trait GenericArray {
-    type PyArray: PyObjectPayload;
+    type PyArray: PyObjectPayload + ToPyObject;
+    fn cast(&self) -> Self::PyArray;
 }
 
 #[rustpython_vm::pymodule]
@@ -50,6 +51,9 @@ pub mod pyndarray {
 
             impl GenericArray for PyNdArray<$primitive> {
                 type PyArray = $dtype;
+                fn cast(&self) -> Self::PyArray {
+                    $dtype { arr: self.clone() }
+                }
             }
 
             //#[pyclass]
