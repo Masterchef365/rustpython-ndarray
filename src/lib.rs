@@ -2,12 +2,7 @@
 
 use ndarray::{ArrayViewD, ArrayViewMutD, IxDyn, SliceInfo, SliceInfoElem};
 use rustpython_vm::{
-    atomic_func,
-    builtins::{PyInt, PyModule, PySlice, PyStr, PyTuple},
-    class::PyClassImpl,
-    convert::ToPyObject,
-    protocol::PyMappingMethods,
-    PyObject, PyObjectRef, PyRef, PyResult, TryFromObject, VirtualMachine,
+    atomic_func, builtins::{PyInt, PyModule, PySlice, PyStr, PyTuple}, class::PyClassImpl, convert::ToPyObject, object::PyObjectPayload, protocol::PyMappingMethods, PyObject, PyObjectRef, PyRef, PyResult, TryFromObject, VirtualMachine
 };
 
 use std::{
@@ -15,7 +10,7 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-mod generic_pyndarray;
+pub mod generic_pyndarray;
 use generic_pyndarray::{py_shape_to_rust, PyNdArray};
 
 pub fn make_module(vm: &VirtualMachine) -> PyRef<PyModule> {
@@ -33,6 +28,10 @@ pub enum DataType {
     Float64,
 }
 
+pub trait GenericArray {
+    type PyArray: PyObjectPayload;
+}
+
 #[rustpython_vm::pymodule]
 pub mod pyndarray {
     use super::*;
@@ -45,8 +44,12 @@ pub mod pyndarray {
         ($primitive:ident, $dtype:ident) => {
             #[derive(PyPayload, Clone, Debug)]
             #[pyclass(module = "pyndarray", name)]
-            pub(crate) struct $dtype {
+            pub struct $dtype {
                 pub(crate) arr: PyNdArray<$primitive>,
+            }
+
+            impl GenericArray for PyNdArray<$primitive> {
+                type PyArray = $dtype;
             }
 
             //#[pyclass]

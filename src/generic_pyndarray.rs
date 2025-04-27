@@ -13,6 +13,8 @@ use std::{
     sync::{Arc, RwLock},
 };
 
+use crate::GenericArray;
+
 pub type DynamicSlice = SliceInfo<Vec<SliceInfoElem>, IxDyn, IxDyn>;
 
 /// Provides a sliced representation of an array, where the slices are deferred until needed.
@@ -30,6 +32,7 @@ impl<T> PyNdArray<T> {
         }
     }
 
+    /// Borrow the entire array immutably to read it for a moment
     pub fn read<U>(&self, mut readfn: impl FnMut(ArrayViewD<'_, T>) -> U) -> U {
         let arr = self.unsliced.read().unwrap();
 
@@ -45,6 +48,7 @@ impl<T> PyNdArray<T> {
         readfn(arr_slice)
     }
 
+    /// Borrow the entire array mutably for a moment
     pub fn write<U>(&self, writefn: impl Fn(ArrayViewMutD<'_, T>) -> U) -> U {
         let mut arr = self.unsliced.write().unwrap();
 
@@ -62,6 +66,7 @@ impl<T> PyNdArray<T> {
 }
 
 impl<T: ToPyObject + Copy> PyNdArray<T> {
+    /// getitem, as implemented in the rustpython interface
     pub fn getitem(&self, needle: PyObjectRef, vm: &VirtualMachine) -> PyResult {
         let last_slice = py_index_to_sliceinfo(needle, vm)?;
 
@@ -75,7 +80,8 @@ impl<T: ToPyObject + Copy> PyNdArray<T> {
     }
 }
 
-impl<T: TryFromObject + Copy> PyNdArray<T> {
+impl<T: TryFromObject + Copy> PyNdArray<T> where PyNdArray<T>: GenericArray {
+    /// setitem, as implemented in the rustpython interface
     pub fn setitem(
         &self,
         needle: PyObjectRef,
@@ -83,17 +89,20 @@ impl<T: TryFromObject + Copy> PyNdArray<T> {
         vm: &VirtualMachine,
     ) -> PyResult<()> {
         let last_slice = py_index_to_sliceinfo(needle, vm)?;
-        let value: T = TryFromObject::try_from_object(vm, value)?;
 
+        if let Some(other_array) = value.downcast_ref::<<Self as GenericArray>::PyArray>() {
+            self.write(|mut sliced| {
+            });
+
+            return Ok(());
+        }
+
+        let value: T = TryFromObject::try_from_object(vm, value)?;
         self.write(|mut sliced| {
             let mut sliced = sliced.slice_mut(&last_slice);
             let dim = sliced.dim();
-            *sliced
-                .get_mut([])
-                .ok_or_else(|| vm.new_runtime_error(format!("Array has dimension {:?}", dim)))? =
-                value;
-            Ok(())
-        })?;
+            sliced.fill(value);
+        });
 
         Ok(())
     }
@@ -105,20 +114,23 @@ impl<T: Display> Display for PyNdArray<T> {
     }
 }
 
-fn pyint_to_isize(int: &PyInt, vm: &VirtualMachine) -> PyResult<isize> {
+/// Converts a PyInt to an isize
+pub fn pyint_to_isize(int: &PyInt, vm: &VirtualMachine) -> PyResult<isize> {
     int.as_bigint()
         .try_into()
         .map_err(|e| vm.new_runtime_error(format!("{e}")))
 }
 
-fn py_obj_elem_to_isize(obj: &PyObject, vm: &VirtualMachine) -> PyResult<isize> {
+/// Converts a PyObject to an isize
+pub fn py_obj_elem_to_isize(obj: &PyObject, vm: &VirtualMachine) -> PyResult<isize> {
     let int: &PyInt = obj
         .downcast_ref::<PyInt>()
         .ok_or_else(|| vm.new_runtime_error("Indices must be isize".to_string()))?;
     pyint_to_isize(int, vm)
 }
 
-fn py_index_elem_to_sliceinfo_elem(
+/// Converts a PyObject to a SliceInfoElem
+pub fn py_index_elem_to_sliceinfo_elem(
     elem: PyObjectRef,
     vm: &VirtualMachine,
 ) -> PyResult<SliceInfoElem> {
@@ -148,7 +160,8 @@ fn py_index_elem_to_sliceinfo_elem(
     Err(vm.new_runtime_error("Unrecognized index {elem:?}".to_string()))
 }
 
-fn py_index_to_sliceinfo(shape: PyObjectRef, vm: &VirtualMachine) -> PyResult<DynamicSlice> {
+/// Converts a PyObject to a DynamicSlice
+pub fn py_index_to_sliceinfo(shape: PyObjectRef, vm: &VirtualMachine) -> PyResult<DynamicSlice> {
     if let Ok(single) = py_index_elem_to_sliceinfo_elem(shape.clone(), vm) {
         return Ok(DynamicSlice::try_from(vec![single]).unwrap());
     }
@@ -164,6 +177,7 @@ fn py_index_to_sliceinfo(shape: PyObjectRef, vm: &VirtualMachine) -> PyResult<Dy
     Err(vm.new_runtime_error("Unrecognized index {shape:?}".to_string()))
 }
 
+/// Converts a PyObject shape to a Vec<usize>
 pub fn py_shape_to_rust(shape: PyObjectRef, vm: &VirtualMachine) -> PyResult<Vec<usize>> {
     if let Some(int) = shape.downcast_ref::<PyInt>() {
         return Ok(vec![int
