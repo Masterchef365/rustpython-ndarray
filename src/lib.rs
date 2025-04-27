@@ -36,8 +36,8 @@ pub trait GenericArray {
 #[rustpython_vm::pymodule]
 pub mod pyndarray {
     use super::*;
-    use builtins::PyStrRef;
-    use function::KwArgs;
+    use builtins::{PyIntRef, PyStrRef};
+    use function::{KwArgs, OptionalArg};
     use rustpython_vm::types::AsMapping;
     use rustpython_vm::*;
 
@@ -143,6 +143,11 @@ pub mod pyndarray {
             ))
             .to_pyobject(vm)),
         }
+    }
+
+    #[pyfunction]
+    fn arange(start_or_stop_a: PyIntRef, stop: OptionalArg<PyIntRef>, step: OptionalArg<PyIntRef>, kw: KwArgs, vm: &VirtualMachine) -> PyResult {
+        todo!()
     }
 }
 
