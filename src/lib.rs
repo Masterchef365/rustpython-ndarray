@@ -3,7 +3,7 @@
 use ndarray::{ArrayViewD, ArrayViewMutD, IxDyn, SliceInfo, SliceInfoElem};
 use rustpython_vm::{
     atomic_func,
-    builtins::{PyInt, PyList, PyModule, PyStr, PyTuple},
+    builtins::{PyInt, PyList, PyModule, PySlice, PyStr, PyTuple},
     class::PyClassImpl,
     convert::ToPyObject,
     object::PyObjectPayload,
@@ -136,14 +136,42 @@ pub mod pyndarray {
 
 type DynamicSlice = SliceInfo<Vec<SliceInfoElem>, IxDyn, IxDyn>;
 
+fn py_index_elem_to_isize(int: &PyInt, vm: &VirtualMachine) -> PyResult<isize> {
+    int.as_bigint()
+        .try_into()
+        .map_err(|e| vm.new_runtime_error(format!("{e}")))
+}
+
+fn py_obj_elem_to_isize(obj: &PyObject, vm: &VirtualMachine) -> PyResult<isize> {
+    let int: &PyInt = obj.downcast_ref::<PyInt>()
+        .ok_or_else(|| vm.new_runtime_error("Indices must be isize".to_string()))?;
+    py_index_elem_to_isize(int, vm)
+}
+
+fn py_index_elem_to_sliceinfo_elem(
+    elem: PyObjectRef,
+    vm: &VirtualMachine,
+) -> PyResult<SliceInfoElem> {
+    if let Some(int) = elem.downcast_ref::<PyInt>() {
+        return Ok(SliceInfoElem::Index(py_index_elem_to_isize(int, vm)?));
+    }
+
+    if let Some(slice) = elem.downcast_ref::<PySlice>() {
+        let stop = py_obj_elem_to_isize(&slice.stop, vm)?;
+        return Ok(SliceInfoElem::Index(stop));
+        //slice.return
+    }
+
+    Err(vm.new_runtime_error("Unrecognized index {elem:?}".to_string()))
+}
+
 fn py_index_to_sliceinfo(shape: PyObjectRef, vm: &VirtualMachine) -> PyResult<DynamicSlice> {
     if let Some(int) = shape.downcast_ref::<PyInt>() {
         let idx: isize = int
             .as_bigint()
             .try_into()
             .map_err(|e| vm.new_runtime_error(format!("{e}")))?;
-            return Ok(DynamicSlice::try_from(vec![SliceInfoElem::Index(idx)])
-                .unwrap())
+        return Ok(DynamicSlice::try_from(vec![SliceInfoElem::Index(idx)]).unwrap());
     }
 
     Err(vm.new_runtime_error("nah".to_string()))
