@@ -1,0 +1,1 @@
+- [ ] Panicking inside ndarray when we use the wrong number of slice indices

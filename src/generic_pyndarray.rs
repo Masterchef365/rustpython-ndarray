@@ -114,7 +114,7 @@ where
         let last_slice = py_index_to_sliceinfo(needle, vm)?;
 
         if let Some(other_array) = value.downcast_ref::<<Self as GenericArray>::PyArray>() {
-            todo!();
+            todo!("yaey");
 
             self.write(|mut sliced| {});
 
