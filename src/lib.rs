@@ -22,7 +22,10 @@ pub fn make_module(vm: &VirtualMachine) -> PyRef<PyModule> {
 }
 
 use std::{
-    borrow::Borrow, fmt::Display, str::FromStr, sync::{Arc, RwLock}
+    borrow::Borrow,
+    fmt::Display,
+    str::FromStr,
+    sync::{Arc, RwLock},
 };
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -176,7 +179,7 @@ fn py_index_elem_to_sliceinfo_elem(
             start: start.unwrap_or(stop),
             step: step.unwrap_or(1),
             end: Some(stop),
-        })
+        });
     }
 
     Err(vm.new_runtime_error("Unrecognized index {elem:?}".to_string()))
@@ -221,19 +224,19 @@ fn py_shape_to_rust(shape: PyObjectRef, vm: &VirtualMachine) -> PyResult<Vec<usi
 #[derive(Debug, Clone)]
 pub struct PyNdArray<T> {
     pub slices: Vec<DynamicSlice>,
-    pub data: Arc<RwLock<ndarray::ArrayD<T>>>,
+    pub unsliced: Arc<RwLock<ndarray::ArrayD<T>>>,
 }
 
 impl<T> PyNdArray<T> {
     pub fn from_array(data: ndarray::ArrayD<T>) -> Self {
         Self {
             slices: vec![],
-            data: Arc::new(RwLock::new(data)),
+            unsliced: Arc::new(RwLock::new(data)),
         }
     }
 
     pub fn read<U>(&self, mut readfn: impl FnMut(ArrayViewD<'_, T>) -> U) -> U {
-        let mut arr = self.data.read().unwrap();
+        let mut arr = self.unsliced.read().unwrap();
 
         let default_slice = vec![SliceInfoElem::from(..); arr.ndim()];
         let default_slice = DynamicSlice::try_from(default_slice).unwrap();
@@ -248,7 +251,7 @@ impl<T> PyNdArray<T> {
     }
 
     pub fn write<U>(&self, mut writefn: impl Fn(ArrayViewMutD<'_, T>) -> U) -> U {
-        let mut arr = self.data.write().unwrap();
+        let mut arr = self.unsliced.write().unwrap();
 
         let default_slice = vec![SliceInfoElem::from(..); arr.ndim()];
         let default_slice = DynamicSlice::try_from(default_slice).unwrap();
@@ -265,21 +268,39 @@ impl<T> PyNdArray<T> {
 
 impl<T: ToPyObject + Copy> PyNdArray<T> {
     fn getitem(&self, needle: PyObjectRef, vm: &VirtualMachine) -> PyResult {
-        let data = self.data.read().unwrap();
-        /*
-        for slice in self.slices {
-            data.slice(&slice)
-        }
-        */
-        let indices = py_shape_to_rust(needle, vm)?;
-        let value = data
-            .get(indices.as_slice())
-            .ok_or_else(|| vm.new_runtime_error("Invalid index".into()))?;
+        let last_slice = py_index_to_sliceinfo(needle, vm)?;
+
+        let value = self.read(|sliced| {
+            sliced.slice(&last_slice).get([]).copied().ok_or_else(|| {
+                vm.new_runtime_error(format!("Array has dimension {:?}", sliced.dim()))
+            })
+        })?;
 
         Ok(value.to_pyobject(vm))
     }
 }
 
+impl<T: TryFromObject + Copy> PyNdArray<T> {
+    setitem(
+        &self,
+        needle: PyObjectRef,
+        value: PyObjectRef,
+        vm: &VirtualMachine,
+    ) -> PyResult<()> {
+        let last_slice = py_index_to_sliceinfo(needle, vm)?;
+
+        let value = self.write(|sliced| {
+            sliced.slice_move(&last_slice).([]).copied().ok_or_else(|| {
+                vm.new_runtime_error(format!("Array has dimension {:?}", sliced.dim()))
+            })
+        })?;
+
+        Ok(value.to_pyobject(vm))
+    }
+}
+
+
+/*
 impl<T: TryFromObject + Copy> PyNdArray<T> {
     fn setitem(
         &self,
@@ -288,7 +309,7 @@ impl<T: TryFromObject + Copy> PyNdArray<T> {
         vm: &VirtualMachine,
     ) -> PyResult<()> {
         let indices = py_shape_to_rust(needle, vm)?;
-        let mut data = self.data.write().unwrap();
+        let mut data = self.unsliced.write().unwrap();
         /*
         for slice in self.slices {
             data.slice(&slice)
@@ -303,6 +324,7 @@ impl<T: TryFromObject + Copy> PyNdArray<T> {
         Ok(())
     }
 }
+*/
 
 impl<T: Display> Display for PyNdArray<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
