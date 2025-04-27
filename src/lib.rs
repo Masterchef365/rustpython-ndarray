@@ -37,6 +37,7 @@ pub enum DataType {
 pub trait GenericArray {
     type PyArray: PyObjectPayload + ToPyObject;
     fn cast(&self) -> Self::PyArray;
+    const DTYPE: DataType;
 }
 
 #[rustpython_vm::pymodule]
@@ -49,7 +50,7 @@ pub mod pyndarray {
     use rustpython_vm::*;
 
     macro_rules! build_pyarray {
-        ($primitive:ident, $dtype:ident) => {
+        ($primitive:ident, $dtype:ident, $dtype_enum:expr) => {
             #[derive(PyPayload, Clone, Debug)]
             #[pyclass(module = "pyndarray", name)]
             pub struct $dtype {
@@ -58,6 +59,7 @@ pub mod pyndarray {
 
             impl GenericArray for PyNdArray<$primitive> {
                 type PyArray = $dtype;
+                const DTYPE: DataType = $dtype_enum;
                 fn cast(&self) -> Self::PyArray {
                     $dtype { arr: self.clone() }
                 }
@@ -84,6 +86,11 @@ pub mod pyndarray {
                 #[pymethod(magic)]
                 fn str(zelf: PyRef<Self>, vm: &VirtualMachine) -> PyResult<PyStrRef> {
                     Ok(vm.ctx.new_str(zelf.arr.to_string()))
+                }
+
+                #[pymethod(magic)]
+                fn repr(zelf: PyRef<Self>, vm: &VirtualMachine) -> PyResult<PyStrRef> {
+                    Ok(vm.ctx.new_str(zelf.arr.repr()))
                 }
             }
 
@@ -124,8 +131,8 @@ pub mod pyndarray {
         };
     }
 
-    build_pyarray!(f32, PyNdArrayFloat32);
-    build_pyarray!(f64, PyNdArrayFloat64);
+    build_pyarray!(f32, PyNdArrayFloat32, DataType::Float32);
+    build_pyarray!(f64, PyNdArrayFloat64, DataType::Float64);
 
     #[pyfunction]
     fn zeros(shape: PyObjectRef, mut kw: KwArgs, vm: &VirtualMachine) -> PyResult<PyObjectRef> {
@@ -202,6 +209,13 @@ impl DataType {
             "float64" => Some(Self::Float64),
             "float32" => Some(Self::Float32),
             _ => None,
+        }
+    }
+
+    fn stringy_key(&self) -> &'static str {
+        match self {
+            DataType::Float32 => "float32",
+            DataType::Float64 => "float64",
         }
     }
 }

@@ -74,6 +74,12 @@ impl<T> PyNdArray<T> {
     }
 }
 
+impl<T: Display> PyNdArray<T> where PyNdArray<T>: GenericArray {
+    pub fn repr(&self) -> String {
+        format!("array({}, dtype='{}')", self, Self::DTYPE.stringy_key())
+    }
+}
+
 impl<T: ToPyObject + Copy> PyNdArray<T> {
     /// getitem, as implemented in the rustpython interface
     pub fn getitem(&self, needle: PyObjectRef, vm: &VirtualMachine) -> PyResult
