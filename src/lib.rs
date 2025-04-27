@@ -290,14 +290,16 @@ impl<T: TryFromObject + Copy> PyNdArray<T> {
         let last_slice = py_index_to_sliceinfo(needle, vm)?;
         let value: T = TryFromObject::try_from_object(vm, value)?;
 
-        self.write(|sliced| {
-            *sliced.slice_move(&last_slice).get_mut([]).copied().ok_or_else(|| {
-                vm.new_runtime_error(format!("Array has dimension {:?}", sliced.dim()))
+        self.write(|mut sliced| {
+            let mut sliced = sliced.slice_mut(&last_slice);
+            let dim = sliced.dim();
+            *sliced.get_mut([]).ok_or_else(|| {
+                vm.new_runtime_error(format!("Array has dimension {:?}", dim))
             })? = value;
             Ok(())
         })?;
 
-        Ok(value.to_pyobject(vm))
+        Ok(())
     }
 }
 
