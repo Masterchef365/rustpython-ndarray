@@ -1,4 +1,4 @@
-//#![allow(warnings)]
+#![allow(unused)]
 
 use ndarray::{ArrayViewD, ArrayViewMutD, IxDyn, SliceInfo, SliceInfoElem};
 use rustpython_vm::{
@@ -182,15 +182,19 @@ fn py_index_elem_to_sliceinfo_elem(
 }
 
 fn py_index_to_sliceinfo(shape: PyObjectRef, vm: &VirtualMachine) -> PyResult<DynamicSlice> {
-    if let Some(int) = shape.downcast_ref::<PyInt>() {
-        let idx: isize = int
-            .as_bigint()
-            .try_into()
-            .map_err(|e| vm.new_runtime_error(format!("{e}")))?;
-        return Ok(DynamicSlice::try_from(vec![SliceInfoElem::Index(idx)]).unwrap());
+    if let Ok(single) = py_index_elem_to_sliceinfo_elem(shape.clone(), vm) {
+        return Ok(DynamicSlice::try_from(vec![single]).unwrap());
     }
 
-    Err(vm.new_runtime_error("nah".to_string()))
+    if let Some(tuple) = shape.downcast_ref::<PyTuple>() {
+        let indices: Vec<SliceInfoElem> = tuple
+            .iter()
+            .map(|member| py_index_elem_to_sliceinfo_elem(member.clone(), vm))
+            .collect::<PyResult<_>>()?;
+        return Ok(DynamicSlice::try_from(indices).unwrap());
+    }
+
+    Err(vm.new_runtime_error("Unrecognized index {shape:?}".to_string()))
 }
 
 fn py_shape_to_rust(shape: PyObjectRef, vm: &VirtualMachine) -> PyResult<Vec<usize>> {
