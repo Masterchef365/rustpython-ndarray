@@ -1,5 +1,6 @@
 #![allow(warnings)]
 
+use ndarray::{ArrayViewD, IxDyn, SliceInfo, SliceInfoElem};
 use rustpython_vm::{
     atomic_func,
     builtins::{PyInt, PyList, PyModule, PyStr, PyTuple},
@@ -133,6 +134,21 @@ pub mod pyndarray {
     }
 }
 
+type DynamicSlice = SliceInfo<Vec<SliceInfoElem>, IxDyn, IxDyn>;
+
+fn py_index_to_sliceinfo(shape: PyObjectRef, vm: &VirtualMachine) -> PyResult<DynamicSlice> {
+    if let Some(int) = shape.downcast_ref::<PyInt>() {
+        let idx: isize = int
+            .as_bigint()
+            .try_into()
+            .map_err(|e| vm.new_runtime_error(format!("{e}")))?;
+            return Ok(DynamicSlice::try_from(vec![SliceInfoElem::Index(idx)])
+                .unwrap())
+    }
+
+    Err(vm.new_runtime_error("nah".to_string()))
+}
+
 fn py_shape_to_rust(shape: PyObjectRef, vm: &VirtualMachine) -> PyResult<Vec<usize>> {
     if let Some(int) = shape.downcast_ref::<PyInt>() {
         return Ok(vec![int
@@ -159,7 +175,7 @@ fn py_shape_to_rust(shape: PyObjectRef, vm: &VirtualMachine) -> PyResult<Vec<usi
 /// Provides a sliced representation of an array, where the slices are deferred until needed.
 #[derive(Debug, Clone)]
 pub struct PyNdArray<T> {
-    pub slices: Vec<Vec<usize>>,
+    pub slices: Vec<DynamicSlice>,
     pub data: Arc<RwLock<ndarray::ArrayD<T>>>,
 }
 
@@ -169,6 +185,21 @@ impl<T: Copy> PyNdArray<T> {
             slices: vec![],
             data: Arc::new(RwLock::new(data)),
         }
+    }
+
+    pub fn read<'a>(&'a self, readfn: impl FnMut(ArrayViewD<'a, T>)) {
+        let mut arr = self.data.read().unwrap();
+
+        let default_slice = vec![SliceInfoElem::from(..); arr.ndim()];
+        let default_slice = DynamicSlice::try_from(default_slice).unwrap();
+
+        let mut arr_slice = arr.slice(default_slice);
+
+        for slice in &self.slices {
+            arr_slice = arr_slice.slice(slice);
+        }
+
+        readfn(arr_slice);
     }
 }
 
