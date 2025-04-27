@@ -143,7 +143,8 @@ fn py_index_elem_to_isize(int: &PyInt, vm: &VirtualMachine) -> PyResult<isize> {
 }
 
 fn py_obj_elem_to_isize(obj: &PyObject, vm: &VirtualMachine) -> PyResult<isize> {
-    let int: &PyInt = obj.downcast_ref::<PyInt>()
+    let int: &PyInt = obj
+        .downcast_ref::<PyInt>()
         .ok_or_else(|| vm.new_runtime_error("Indices must be isize".to_string()))?;
     py_index_elem_to_isize(int, vm)
 }
@@ -158,8 +159,21 @@ fn py_index_elem_to_sliceinfo_elem(
 
     if let Some(slice) = elem.downcast_ref::<PySlice>() {
         let stop = py_obj_elem_to_isize(&slice.stop, vm)?;
-        return Ok(SliceInfoElem::Index(stop));
-        //slice.return
+        let start = slice
+            .start
+            .as_ref()
+            .map(|start| py_obj_elem_to_isize(start, vm))
+            .transpose()?;
+        let step = slice
+            .step
+            .as_ref()
+            .map(|step| py_obj_elem_to_isize(step, vm))
+            .transpose()?;
+        return Ok(SliceInfoElem::Slice {
+            start: start.unwrap_or(stop),
+            step: step.unwrap_or(1),
+            end: Some(stop),
+        })
     }
 
     Err(vm.new_runtime_error("Unrecognized index {elem:?}".to_string()))
