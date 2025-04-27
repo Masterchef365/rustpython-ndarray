@@ -2,7 +2,13 @@
 
 use ndarray::{ArrayViewD, ArrayViewMutD, IxDyn, SliceInfo, SliceInfoElem};
 use rustpython_vm::{
-    atomic_func, builtins::{PyInt, PyModule, PySlice, PyStr, PyTuple}, class::PyClassImpl, convert::ToPyObject, object::PyObjectPayload, protocol::PyMappingMethods, PyObject, PyObjectRef, PyRef, PyResult, TryFromObject, VirtualMachine
+    atomic_func,
+    builtins::{PyInt, PyModule, PySlice, PyStr, PyTuple},
+    class::PyClassImpl,
+    convert::ToPyObject,
+    object::PyObjectPayload,
+    protocol::PyMappingMethods,
+    PyObject, PyObjectRef, PyRef, PyResult, TryFromObject, VirtualMachine,
 };
 
 use std::{
@@ -36,8 +42,9 @@ pub trait GenericArray {
 #[rustpython_vm::pymodule]
 pub mod pyndarray {
     use super::*;
-    use builtins::{PyIntRef, PyStrRef};
+    use builtins::{PyFloat, PyIntRef, PyStrRef};
     use function::{KwArgs, OptionalArg};
+    use generic_pyndarray::pyint_to_isize;
     use rustpython_vm::types::AsMapping;
     use rustpython_vm::*;
 
@@ -146,8 +153,45 @@ pub mod pyndarray {
     }
 
     #[pyfunction]
-    fn arange(start_or_stop_a: PyIntRef, stop: OptionalArg<PyIntRef>, step: OptionalArg<PyIntRef>, kw: KwArgs, vm: &VirtualMachine) -> PyResult {
-        todo!()
+    fn arange(
+        start_or_stop_a: PyRef<PyFloat>,
+        stop: OptionalArg<PyRef<PyFloat>>,
+        step: OptionalArg<PyRef<PyFloat>>,
+        mut kw: KwArgs,
+        vm: &VirtualMachine,
+    ) -> PyResult {
+        let dtype = kw.pop_kwarg("dtype");
+        let dtype = dtype
+            .map(|dtype| {
+                DataType::from_pyobject(&dtype)
+                    .ok_or_else(|| vm.new_runtime_error(format!("Unrecognized dtype {dtype:?}")))
+            })
+            .transpose()?;
+        let dtype = dtype.unwrap_or(DataType::Float32);
+
+        let start_or_stop_a = start_or_stop_a.to_f64(); //pyint_to_isize(&start_or_stop_a, vm)?;
+        let stop = stop.as_option().map(|stop| stop.to_f64()); //pyint_to_isize(&stop, vm)).transpose()?;
+        let step = step.as_option().map(|step| step.to_f64()); //pyint_to_isize(&step, vm)).transpose()?;
+
+        let (start, stop, step) = match (stop, step) {
+            (None, None) => (0.0, start_or_stop_a, 1.0),
+            (Some(stop), None) => (start_or_stop_a, stop, 1.0),
+            (Some(stop), Some(step)) => (start_or_stop_a, stop, step),
+            _ => unreachable!(),
+        };
+
+        Ok(match dtype {
+            DataType::Float32 => PyNdArray::from_array(
+                ndarray::Array::range(start as f32, stop as f32, step as f32).into_dyn(),
+            )
+            .cast()
+            .to_pyobject(vm),
+            DataType::Float64 => {
+                PyNdArray::from_array(ndarray::Array::range(start, stop, step).into_dyn())
+                    .cast()
+                    .to_pyobject(vm)
+            }
+        })
     }
 }
 
