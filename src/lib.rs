@@ -1,19 +1,17 @@
-#![allow(warnings)]
+//#![allow(warnings)]
 
 use ndarray::{ArrayViewD, ArrayViewMutD, IxDyn, SliceInfo, SliceInfoElem};
 use rustpython_vm::{
     atomic_func,
-    builtins::{PyInt, PyList, PyModule, PySlice, PyStr, PyTuple},
+    builtins::{PyInt, PyModule, PySlice, PyStr, PyTuple},
     class::PyClassImpl,
     convert::ToPyObject,
-    object::PyObjectPayload,
     protocol::PyMappingMethods,
-    types::AsMapping,
     PyObject, PyObjectRef, PyRef, PyResult, TryFromObject, VirtualMachine,
 };
 
 pub fn make_module(vm: &VirtualMachine) -> PyRef<PyModule> {
-    let mut module = pyndarray::make_module(vm);
+    let module = pyndarray::make_module(vm);
     //module.set_attr("PyNdArrayFloat32", pyndarray::PyNdArrayFloat32::make_class(&vm.ctx), vm);
     pyndarray::PyNdArrayFloat32::make_class(&vm.ctx);
     pyndarray::PyNdArrayFloat64::make_class(&vm.ctx);
@@ -22,9 +20,7 @@ pub fn make_module(vm: &VirtualMachine) -> PyRef<PyModule> {
 }
 
 use std::{
-    borrow::Borrow,
     fmt::Display,
-    str::FromStr,
     sync::{Arc, RwLock},
 };
 
@@ -37,8 +33,8 @@ pub enum DataType {
 #[rustpython_vm::pymodule]
 pub mod pyndarray {
     use super::*;
-    use builtins::{PyListRef, PyStr, PyStrRef};
-    use function::{KwArgs, OptionalArg};
+    use builtins::PyStrRef;
+    use function::KwArgs;
     use rustpython_vm::types::AsMapping;
     use rustpython_vm::*;
 
@@ -236,7 +232,7 @@ impl<T> PyNdArray<T> {
     }
 
     pub fn read<U>(&self, mut readfn: impl FnMut(ArrayViewD<'_, T>) -> U) -> U {
-        let mut arr = self.unsliced.read().unwrap();
+        let arr = self.unsliced.read().unwrap();
 
         let default_slice = vec![SliceInfoElem::from(..); arr.ndim()];
         let default_slice = DynamicSlice::try_from(default_slice).unwrap();
@@ -250,7 +246,7 @@ impl<T> PyNdArray<T> {
         readfn(arr_slice)
     }
 
-    pub fn write<U>(&self, mut writefn: impl Fn(ArrayViewMutD<'_, T>) -> U) -> U {
+    pub fn write<U>(&self, writefn: impl Fn(ArrayViewMutD<'_, T>) -> U) -> U {
         let mut arr = self.unsliced.write().unwrap();
 
         let default_slice = vec![SliceInfoElem::from(..); arr.ndim()];
@@ -293,42 +289,16 @@ impl<T: TryFromObject + Copy> PyNdArray<T> {
         self.write(|mut sliced| {
             let mut sliced = sliced.slice_mut(&last_slice);
             let dim = sliced.dim();
-            *sliced.get_mut([]).ok_or_else(|| {
-                vm.new_runtime_error(format!("Array has dimension {:?}", dim))
-            })? = value;
+            *sliced
+                .get_mut([])
+                .ok_or_else(|| vm.new_runtime_error(format!("Array has dimension {:?}", dim)))? =
+                value;
             Ok(())
         })?;
 
         Ok(())
     }
 }
-
-
-/*
-impl<T: TryFromObject + Copy> PyNdArray<T> {
-    fn setitem(
-        &self,
-        needle: PyObjectRef,
-        value: PyObjectRef,
-        vm: &VirtualMachine,
-    ) -> PyResult<()> {
-        let indices = py_shape_to_rust(needle, vm)?;
-        let mut data = self.unsliced.write().unwrap();
-        /*
-        for slice in self.slices {
-            data.slice(&slice)
-        }
-        */
-
-        let cell = data
-            .get_mut(indices.as_slice())
-            .ok_or_else(|| vm.new_runtime_error("Invalid index".into()))?;
-        *cell = TryFromObject::try_from_object(vm, value)?;
-
-        Ok(())
-    }
-}
-*/
 
 impl<T: Display> Display for PyNdArray<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

@@ -1,9 +1,4 @@
-use std::ops::Deref;
-
-use rustpython_vm::{
-    builtins::{PyBaseExceptionRef, PyNone},
-    Interpreter, PyPayload, PyResult, TryFromBorrowedObject, VirtualMachine,
-};
+use rustpython_vm::{builtins::PyBaseExceptionRef, Interpreter, VirtualMachine};
 
 fn get_interpreter() -> Interpreter {
     rustpython::InterpreterConfig::new()
@@ -23,7 +18,10 @@ fn run_code(source: &'static str) {
     interp.enter(|vm| {
         let scope = vm.new_scope_with_builtins();
         let ndarray = vm.import("ndarray", 0).unwrap();
-        scope.globals.set_item("ndarray", ndarray.clone(), vm).unwrap();
+        scope
+            .globals
+            .set_item("ndarray", ndarray.clone(), vm)
+            .unwrap();
         scope.globals.set_item("nd", ndarray, vm).unwrap();
 
         vm.run_block_expr(scope, &source)
