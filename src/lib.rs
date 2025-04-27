@@ -187,10 +187,7 @@ impl<T: Copy> PyNdArray<T> {
         }
     }
 
-    pub fn read<F>(&self, mut readfn: F) 
-        where 
-            for<'a> F: Fn(ArrayViewD<'a, T>)
-    {
+    pub fn read<F>(&self, mut readfn: impl Fn(ArrayViewD<'_, T>)) {
         let mut arr = self.data.read().unwrap();
 
         let default_slice = vec![SliceInfoElem::from(..); arr.ndim()];
