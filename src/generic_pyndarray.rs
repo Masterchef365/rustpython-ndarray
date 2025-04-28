@@ -115,14 +115,17 @@ where
         value: T,
         vm: &VirtualMachine,
     ) -> PyResult<()> {
-
         self.write(|mut sliced| {
+            if let Err(e) = sliced.bounds_check(&needle) {
+                return Err(vm.new_runtime_error(format!("Slice out of bounds; {e}")));
+            }
+
             let mut sliced = sliced.slice_mut(&needle);
             let dim = sliced.dim();
             sliced.fill(value);
-        });
 
-        Ok(())
+            Ok(())
+        })
     }
 
     /// Fills the slice `needle` with `value` (casted to T)
@@ -140,18 +143,28 @@ where
                 us.to_owned()
             });
             self.write(|mut other_us| {
-                other_us.slice_mut(&needle).assign(&copied);
-            });
+                if let Err(e) = other_us.bounds_check(&needle) {
+                    return Err(vm.new_runtime_error(format!("Slice out of bounds; {e}")));
+                }
 
-            Ok(())
+                other_us.slice_mut(&needle).assign(&copied);
+
+                Ok(())
+            })
+
         } else {
             self.write(|mut us| {
+                if let Err(e) = us.bounds_check(&needle) {
+                    return Err(vm.new_runtime_error(format!("Slice out of bounds; {e}")));
+                }
+
                 value.read(|mut them| {
                     us.slice_mut(&needle).assign(&them);
-                })
-            });
+                });
 
-            Ok(())
+                Ok(())
+            })
+
         }
     }
 }
