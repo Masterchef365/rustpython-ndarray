@@ -89,6 +89,10 @@ impl<T: ToPyObject + Copy> SlicedArcArray<T> {
         let last_slice = py_index_to_sliceinfo(needle, vm)?;
 
         self.read(|sliced| {
+            if let Err(e) = sliced.bounds_check(&last_slice) {
+                return Err(vm.new_runtime_error(format!("Slice out of bounds; {e}")));
+            }
+
             let sliced = sliced.slice(&last_slice);
 
             if sliced.ndim() == 0 {
