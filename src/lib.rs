@@ -17,7 +17,7 @@ use std::{
 };
 
 pub mod generic_pyndarray;
-use generic_pyndarray::{py_shape_to_rust, PyNdArray};
+use generic_pyndarray::{py_shape_to_rust, SlicedArcArray};
 
 pub fn make_module(vm: &VirtualMachine) -> PyRef<PyModule> {
     let module = pyndarray::make_module(vm);
@@ -54,10 +54,10 @@ pub mod pyndarray {
             #[derive(PyPayload, Clone, Debug)]
             #[pyclass(module = "pyndarray", name)]
             pub struct $dtype {
-                pub(crate) arr: PyNdArray<$primitive>,
+                pub(crate) arr: SlicedArcArray<$primitive>,
             }
 
-            impl GenericArray for PyNdArray<$primitive> {
+            impl GenericArray for SlicedArcArray<$primitive> {
                 type PyArray = $dtype;
                 const DTYPE: DataType = $dtype_enum;
                 fn cast(&self) -> Self::PyArray {
@@ -123,8 +123,8 @@ pub mod pyndarray {
                 }
             }
 
-            impl From<PyNdArray<$primitive>> for $dtype {
-                fn from(arr: PyNdArray<$primitive>) -> Self {
+            impl From<SlicedArcArray<$primitive>> for $dtype {
+                fn from(arr: SlicedArcArray<$primitive>) -> Self {
                     Self { arr }
                 }
             }
@@ -148,11 +148,11 @@ pub mod pyndarray {
             .transpose()?;
 
         match dtype {
-            Some(DataType::Float64) => Ok(PyNdArrayFloat64::from(PyNdArray::from_array(
+            Some(DataType::Float64) => Ok(PyNdArrayFloat64::from(SlicedArcArray::from_array(
                 ndarray::ArrayD::zeros(shape),
             ))
             .to_pyobject(vm)),
-            None | Some(DataType::Float32) => Ok(PyNdArrayFloat32::from(PyNdArray::from_array(
+            None | Some(DataType::Float32) => Ok(PyNdArrayFloat32::from(SlicedArcArray::from_array(
                 ndarray::ArrayD::zeros(shape),
             ))
             .to_pyobject(vm)),
@@ -188,13 +188,13 @@ pub mod pyndarray {
         };
 
         Ok(match dtype {
-            DataType::Float32 => PyNdArray::from_array(
+            DataType::Float32 => SlicedArcArray::from_array(
                 ndarray::Array::range(start as f32, stop as f32, step as f32).into_dyn(),
             )
             .cast()
             .to_pyobject(vm),
             DataType::Float64 => {
-                PyNdArray::from_array(ndarray::Array::range(start, stop, step).into_dyn())
+                SlicedArcArray::from_array(ndarray::Array::range(start, stop, step).into_dyn())
                     .cast()
                     .to_pyobject(vm)
             }
@@ -223,7 +223,7 @@ impl DataType {
 /*
 use std::sync::{Arc, Mutex};
 use ndarray::SliceInfoElem;
-use pyndarray::PyNdArray;
+use pyndarray::SlicedArcArray;
 use rustpython_vm::atomic_func;
 use rustpython_vm::builtins::PyBaseExceptionRef;
 use rustpython_vm::protocol::{PyMappingMethods, PyNumberMethods};
@@ -261,8 +261,8 @@ pub mod pyndarray {
         data: PyListRef,
         shape: PyListRef,
         vm: &VirtualMachine,
-    ) -> PyResult<PyNdArray> {
-        Ok(PyNdArray::from_array(GenericArrayData::from_array(
+    ) -> PyResult<SlicedArcArray> {
+        Ok(SlicedArcArray::from_array(GenericArrayData::from_array(
             data, shape, vm,
         )?))
     }
@@ -270,20 +270,20 @@ pub mod pyndarray {
     /// Provides a sliced representation of an array, where the slices are deferred until needed.
     #[pyattr]
     #[derive(PyPayload, Clone)]
-    #[pyclass(module = "pyndarray", name = "PyNdArray")]
-    pub(crate) struct PyNdArray {
+    #[pyclass(module = "pyndarray", name = "SlicedArcArray")]
+    pub(crate) struct SlicedArcArray {
         pub(crate) data: Arc<Mutex<GenericArrayData>>,
         pub(crate) slices: Vec<Vec<SliceInfoElem>>,
     }
 
-    impl std::fmt::Debug for PyNdArray {
+    impl std::fmt::Debug for SlicedArcArray {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
             self.data.fmt(f)
         }
     }
 
     #[pyclass(with(AsMapping, AsNumber))]
-    impl PyNdArray {
+    impl SlicedArcArray {
         #[pymethod(magic)]
         fn getitem(&self, needle: PyObjectRef, vm: &VirtualMachine) -> PyResult {
             self.internal_getitem(&*needle, vm)
@@ -336,14 +336,14 @@ pub mod pyndarray {
     }
 }
 
-impl AsMapping for PyNdArray {
+impl AsMapping for SlicedArcArray {
     fn as_mapping() -> &'static PyMappingMethods {
         static AS_MAPPING: PyMappingMethods = PyMappingMethods {
             subscript: atomic_func!(|mapping, needle, vm| {
-                PyNdArray::mapping_downcast(mapping).internal_getitem(needle, vm)
+                SlicedArcArray::mapping_downcast(mapping).internal_getitem(needle, vm)
             }),
             ass_subscript: atomic_func!(|mapping, needle, value, vm| {
-                let zelf = PyNdArray::mapping_downcast(mapping);
+                let zelf = SlicedArcArray::mapping_downcast(mapping);
                 if let Some(value) = value {
                     zelf.internal_setitem(needle, value, vm)
                 } else {
@@ -365,11 +365,11 @@ impl AsMapping for PyNdArray {
     }
 }
 
-impl AsNumber for PyNdArray {
+impl AsNumber for SlicedArcArray {
     fn as_number() -> &'static rustpython_vm::protocol::PyNumberMethods {
         static AS_MAPPING: PyNumberMethods = PyNumberMethods {
             inplace_add: Some(|a, b, vm| {
-                PyNdArray::number_downcast(a.to_number()).internal_iadd(b.to_owned(), vm)?;
+                SlicedArcArray::number_downcast(a.to_number()).internal_iadd(b.to_owned(), vm)?;
                 Ok(a.to_owned())
             }),
             ..PyNumberMethods::NOT_IMPLEMENTED
@@ -385,7 +385,7 @@ fn parse_indices(needle: &PyObject, vm: &VirtualMachine) -> PyResult<Vec<SliceIn
     Ok(indices.into_iter().map(|idx| idx.0).collect())
 }
 
-impl PyNdArray {
+impl SlicedArcArray {
     fn from_array(inner: GenericArrayData) -> Self {
         Self {
             data: Arc::new(Mutex::new(inner)),
@@ -432,7 +432,7 @@ impl PyNdArray {
         // If we're assigning from a slice of ourself, make a silent clone
         // TODO: Slow(?)
         let mut self_clone: Option<GenericArrayData> = None;
-        if let Ok(other) = value.clone().downcast::<PyNdArray>() {
+        if let Ok(other) = value.clone().downcast::<SlicedArcArray>() {
             if Arc::ptr_eq(&self.data, &other.data) {
                 self_clone = Some(lck.clone());
             }
@@ -449,7 +449,7 @@ impl PyNdArray {
         }
 
         // If it's another array ....
-        if let Ok(other) = value.clone().downcast::<PyNdArray>() {
+        if let Ok(other) = value.clone().downcast::<SlicedArcArray>() {
             // If it's us, use the clone we made
             if let Some(self_clone) = self_clone {
                 let self_arr_view =

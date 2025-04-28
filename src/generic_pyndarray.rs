@@ -19,12 +19,12 @@ pub type DynamicSlice = SliceInfo<Vec<SliceInfoElem>, IxDyn, IxDyn>;
 
 /// Provides a sliced representation of an array, where the slices are deferred until needed.
 #[derive(Debug, Clone)]
-pub struct PyNdArray<T> {
+pub struct SlicedArcArray<T> {
     slices: Vec<DynamicSlice>,
     unsliced: Arc<RwLock<ndarray::ArrayD<T>>>,
 }
 
-impl<T> PyNdArray<T> {
+impl<T> SlicedArcArray<T> {
     pub fn from_array(data: ndarray::ArrayD<T>) -> Self {
         Self {
             slices: vec![],
@@ -74,17 +74,17 @@ impl<T> PyNdArray<T> {
     }
 }
 
-impl<T: Display> PyNdArray<T> where PyNdArray<T>: GenericArray {
+impl<T: Display> SlicedArcArray<T> where SlicedArcArray<T>: GenericArray {
     pub fn repr(&self) -> String {
         format!("array({}, dtype='{}')", self, Self::DTYPE.stringy_key())
     }
 }
 
-impl<T: ToPyObject + Copy> PyNdArray<T> {
+impl<T: ToPyObject + Copy> SlicedArcArray<T> {
     /// getitem, as implemented in the rustpython interface
     pub fn getitem(&self, needle: PyObjectRef, vm: &VirtualMachine) -> PyResult
     where
-        PyNdArray<T>: GenericArray,
+        SlicedArcArray<T>: GenericArray,
     {
         let last_slice = py_index_to_sliceinfo(needle, vm)?;
 
@@ -100,9 +100,9 @@ impl<T: ToPyObject + Copy> PyNdArray<T> {
     }
 }
 
-impl<T: TryFromObject + Copy> PyNdArray<T>
+impl<T: TryFromObject + Copy> SlicedArcArray<T>
 where
-    PyNdArray<T>: GenericArray,
+    SlicedArcArray<T>: GenericArray,
 {
     /// setitem, as implemented in the rustpython interface
     pub fn setitem(
@@ -132,7 +132,7 @@ where
     }
 }
 
-impl<T: Display> Display for PyNdArray<T> {
+impl<T: Display> Display for SlicedArcArray<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.read(|slice| write!(f, "{slice}"))
     }
