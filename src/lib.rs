@@ -45,7 +45,7 @@ pub mod pyndarray {
     use super::*;
     use builtins::{PyFloat, PyIntRef, PyStrRef};
     use function::{KwArgs, OptionalArg};
-    use generic_pyndarray::pyint_to_isize;
+    use generic_pyndarray::{pyint_to_isize, py_index_to_sliceinfo};
     use rustpython_vm::types::AsMapping;
     use rustpython_vm::*;
 
@@ -80,7 +80,14 @@ pub mod pyndarray {
                     value: PyObjectRef,
                     vm: &VirtualMachine,
                 ) -> PyResult<()> {
-                    self.arr.setitem(needle, value, vm)
+                    let last_slice = py_index_to_sliceinfo(needle, vm)?;
+
+                    if let Some(other_array) = value.downcast_ref::<$dtype>() {
+                        self.arr.set_array(last_slice, other_array.arr.clone(), vm)
+                    } else {
+                        let value: $primitive = TryFromObject::try_from_object(vm, value)?;
+                        self.arr.fill(last_slice, value, vm)
+                    }
                 }
 
                 #[pymethod(magic)]

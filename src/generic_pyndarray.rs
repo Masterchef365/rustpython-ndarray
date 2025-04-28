@@ -104,31 +104,34 @@ impl<T: TryFromObject + Copy> SlicedArcArray<T>
 where
     SlicedArcArray<T>: GenericArray,
 {
-    /// setitem, as implemented in the rustpython interface
-    pub fn setitem(
+    /// Fills the slice `needle` with `value` (casted to T)
+    pub fn fill(
         &self,
-        needle: PyObjectRef,
-        value: PyObjectRef,
+        needle: DynamicSlice,
+        value: T,
         vm: &VirtualMachine,
     ) -> PyResult<()> {
-        let last_slice = py_index_to_sliceinfo(needle, vm)?;
 
-        if let Some(other_array) = value.downcast_ref::<<Self as GenericArray>::PyArray>() {
-            todo!("yaey");
-
-            self.write(|mut sliced| {});
-
-            return Ok(());
-        }
-
-        let value: T = TryFromObject::try_from_object(vm, value)?;
         self.write(|mut sliced| {
-            let mut sliced = sliced.slice_mut(&last_slice);
+            let mut sliced = sliced.slice_mut(&needle);
             let dim = sliced.dim();
             sliced.fill(value);
         });
 
         Ok(())
+    }
+
+    /// Fills the slice `needle` with `value` (casted to T)
+    pub fn set_array(
+        &self,
+        needle: DynamicSlice,
+        value: SlicedArcArray<T>,
+        vm: &VirtualMachine,
+    ) -> PyResult<()> {
+        todo!();
+        self.write(|mut sliced| {});
+
+        return Ok(());
     }
 }
 
