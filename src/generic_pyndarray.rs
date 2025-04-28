@@ -128,10 +128,27 @@ where
         value: SlicedArcArray<T>,
         vm: &VirtualMachine,
     ) -> PyResult<()> {
-        todo!();
-        self.write(|mut sliced| {});
 
-        return Ok(());
+        // Check if we're copying from a slice of ourself ...
+        if Arc::ptr_eq(&self.unsliced, &value.unsliced) {
+            // TODO: THIS IS MEMORY INTENSIVE AND SLOW!!
+            let copied = value.read(|mut us| {
+                us.to_owned()
+            });
+            self.write(|mut other_us| {
+                other_us.assign(&copied);
+            });
+
+            Ok(())
+        } else {
+            self.write(|mut us| {
+                value.read(|mut them| {
+                    us.assign(&them);
+                })
+            });
+
+            Ok(())
+        }
     }
 }
 
