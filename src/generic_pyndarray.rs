@@ -136,14 +136,14 @@ where
                 us.to_owned()
             });
             self.write(|mut other_us| {
-                other_us.assign(&copied);
+                other_us.slice_mut(&needle).assign(&copied);
             });
 
             Ok(())
         } else {
             self.write(|mut us| {
                 value.read(|mut them| {
-                    us.assign(&them);
+                    us.slice_mut(&needle).assign(&them);
                 })
             });
 
