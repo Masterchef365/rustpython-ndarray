@@ -175,10 +175,7 @@ pub mod pyndarray {
                 fn as_number() -> &'static rustpython_vm::protocol::PyNumberMethods {
                     static AS_MAPPING: PyNumberMethods = PyNumberMethods {
                         inplace_add: Some(|a, b, vm| {
-                            $dtype::number_downcast(a)?;
-                            //a.numbe
-                            //b.asjdfkl();
-                            //SlicedArcArray::number_downcast(a.to_number()).internal_iadd(b.to_owned(), vm)?;
+                            $dtype::iadd($dtype::number_downcast_exact(a.to_number(), vm), b.to_owned(), vm);
                             Ok(a.to_owned())
                         }),
                         ..PyNumberMethods::NOT_IMPLEMENTED
