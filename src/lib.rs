@@ -7,7 +7,7 @@ use rustpython_vm::{
     class::PyClassImpl,
     convert::ToPyObject,
     object::PyObjectPayload,
-    protocol::PyMappingMethods,
+    protocol::{PyMappingMethods, PyNumberMethods},
     PyObject, PyObjectRef, PyRef, PyResult, TryFromObject, VirtualMachine,
 };
 
@@ -80,8 +80,9 @@ pub mod pyndarray {
                     value: PyObjectRef,
                     vm: &VirtualMachine,
                 ) -> PyResult<()> {
+                    let slice = py_index_to_sliceinfo(needle, vm)?;
                     self.assign_or_elem_fn(
-                        needle,
+                        slice,
                         value,
                         vm,
                         |mut dest, src| Ok(dest.assign(&src)),
@@ -105,10 +106,10 @@ pub mod pyndarray {
                     other: PyObjectRef,
                     vm: &VirtualMachine,
                 ) -> PyResult<()> {
-                    let n = zelf.arr.ndim();
+                    let empty_slice = empty_slice_like(&zelf.arr);
                     zelf.assign_or_elem_fn(
-                        ndarray::s![],
-                        value,
+                        empty_slice,
+                        other,
                         vm,
                         |mut dest, src| Ok(dest.assign(&src)),
                         |mut dest, value| Ok(dest.fill(value)),
@@ -120,7 +121,7 @@ pub mod pyndarray {
 
             impl $dtype {
                 pub fn assign_or_elem_fn<F, G, U>(&self, 
-                    needle: PyObjectRef,
+                    slice: DynamicSlice,
                     value: PyObjectRef,
                     vm: &VirtualMachine, 
                     assign_fn: F,
@@ -130,10 +131,8 @@ pub mod pyndarray {
                     F: Fn(ArrayViewMutD<'_, $primitive>, ArrayViewD<'_, $primitive>) -> PyResult<U>,
                     G: Fn(ArrayViewMutD<'_, $primitive>, $primitive) -> PyResult<U>,
                 {
-                    let last_slice = py_index_to_sliceinfo(needle, vm)?;
-
                     if let Some(other_array) = value.downcast_ref::<$dtype>() {
-                        self.arr.assign_fn(last_slice, other_array.arr.clone(), vm, assign_fn)
+                        self.arr.assign_fn(slice, other_array.arr.clone(), vm, assign_fn)
                     } else {
                         let value: $primitive = TryFromObject::try_from_object(vm, value)?;
                         self.arr.write(|mut sliced| {
@@ -167,6 +166,22 @@ pub mod pyndarray {
                                 "Arrays do not support len()".to_string(),
                             ))
                         }),
+                    };
+                    &AS_MAPPING
+                }
+            }
+
+            impl AsNumber for $dtype {
+                fn as_number() -> &'static rustpython_vm::protocol::PyNumberMethods {
+                    static AS_MAPPING: PyNumberMethods = PyNumberMethods {
+                        inplace_add: Some(|a, b, vm| {
+                            $dtype::number_downcast(a)?;
+                            //a.numbe
+                            //b.asjdfkl();
+                            //SlicedArcArray::number_downcast(a.to_number()).internal_iadd(b.to_owned(), vm)?;
+                            Ok(a.to_owned())
+                        }),
+                        ..PyNumberMethods::NOT_IMPLEMENTED
                     };
                     &AS_MAPPING
                 }
@@ -267,6 +282,11 @@ impl DataType {
             DataType::Float64 => "float64",
         }
     }
+}
+
+fn empty_slice_like<T>(arr: &SlicedArcArray<T>) -> DynamicSlice {
+    let n = arr.ndim();
+    DynamicSlice::try_from(vec![SliceInfoElem::from(..); n]).unwrap()
 }
 
 /*
