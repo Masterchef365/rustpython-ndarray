@@ -111,8 +111,8 @@ pub mod pyndarray {
                         empty_slice,
                         other,
                         vm,
-                        |mut dest, src| Ok(dest.assign(&src)),
-                        |mut dest, value| Ok(dest.fill(value)),
+                        |mut dest, src| Ok(dest += &src),
+                        |mut dest, value| Ok(dest += value),
                     )
                 }
 
