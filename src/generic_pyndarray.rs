@@ -58,9 +58,11 @@ impl<T> SlicedArcArray<T> {
         writefn(arr_slice)
     }
 
-    pub fn append_slice(&self, slice: DynamicSlice) -> Result<Self, String> {
+    pub fn append_slice(&self, slice: DynamicSlice, vm: &VirtualMachine) -> PyResult<Self> {
         let check = self.read(|sliced| {
             sliced.bounds_check(&slice)
+        }).map_err(|e| {
+            vm.new_runtime_error(format!("Slice out of bounds; {e}"))
         })?;
 
         let mut slices = self.slices.clone();
@@ -74,6 +76,10 @@ impl<T> SlicedArcArray<T> {
 
     pub fn ndim(&self) -> usize {
         self.read(|sliced| sliced.ndim())
+    }
+
+    pub fn shape(&self) -> Vec<usize> {
+        self.read(|sliced| sliced.shape().to_vec())
     }
 }
 
@@ -100,22 +106,14 @@ impl<T: ToPyObject + Copy> SlicedArcArray<T> {
     where
         SlicedArcArray<T>: GenericArray,
     {
-        let last_slice = py_index_to_sliceinfo(needle, vm)?;
+        let slice = py_index_to_sliceinfo(needle, vm)?;
+        let sliced_self = self.append_slice(slice, vm)?;
 
-        self.read(|sliced| {
-            if let Err(e) = sliced.bounds_check(&last_slice) {
-                return Err(vm.new_runtime_error(format!("Slice out of bounds; {e}")));
-            }
-
-            let sliced = sliced.slice(&last_slice);
-
-            if sliced.ndim() == 0 {
-                Ok(sliced.get([]).copied().unwrap().to_pyobject(vm))
+        sliced_self.read(|sliced_array| {
+            if sliced_array.ndim() == 0 {
+                Ok(sliced_array.get([]).copied().unwrap().to_pyobject(vm))
             } else {
-                let new_array = self.append_slice(last_slice.clone()).map_err(|e| {
-                    vm.new_runtime_error(format!("Slice out of bounds; {e}"))
-                })?;
-                Ok(new_array.cast().to_pyobject(vm))
+                Ok(sliced_self.cast().to_pyobject(vm))
             }
         })
     }
@@ -127,15 +125,10 @@ where
 {
     /// Fills the slice `needle` with `value` (casted to T)
     pub fn fill(&self, needle: DynamicSlice, value: T, vm: &VirtualMachine) -> PyResult<()> {
-        self.write(|mut sliced| {
-            if let Err(e) = sliced.bounds_check(&needle) {
-                return Err(vm.new_runtime_error(format!("Slice out of bounds; {e}")));
-            }
+        let sliced_self = self.append_slice(needle, vm)?;
 
-            let mut sliced = sliced.slice_mut(&needle);
-            let dim = sliced.dim();
+        sliced_self.write(|mut sliced| {
             sliced.fill(value);
-
             Ok(())
         })
     }
@@ -154,28 +147,35 @@ where
     pub fn assign_fn<F, U>(&self, slice: DynamicSlice, other: SlicedArcArray<T>, vm: &VirtualMachine, f: F) -> PyResult<U>
     where
         F: Fn(ArrayViewMutD<'_, T>, ArrayViewD<'_, T>) -> PyResult<U>,
+        T: std::fmt::Debug
     {
         // Check if we're copying from a slice of ourself ...
         if Arc::ptr_eq(&self.unsliced, &other.unsliced) {
             // TODO: THIS IS MEMORY INTENSIVE AND SLOW!!
             let copied = other.read(|mut us| us.to_owned());
-            self.write(|mut other_us| {
-                if let Err(e) = other_us.bounds_check(&slice) {
-                    return Err(vm.new_runtime_error(format!("Slice out of bounds; {e}")));
+            self.append_slice(slice, vm)?.write(|mut other_us| {
+                if other_us.shape() != copied.shape() {
+                    return Err(vm.new_runtime_error(format!(
+                        "Attempted to assign shape {:?} to shape {:?}",
+                        copied.shape(),
+                        other_us.shape(),
+                    )));
                 }
 
-                let other_us = other_us.slice_mut(&slice);
                 f(other_us, copied.view())
             })
         } else {
-            self.write(|mut us| {
-                if let Err(e) = us.bounds_check(&slice) {
-                    return Err(vm.new_runtime_error(format!("Slice out of bounds; {e}")));
-                }
-
+            self.append_slice(slice, vm)?.write(|mut us| {
                 other.read(|mut them| {
-                    let us = us.slice_mut(&slice);
-                    f(us, them.view())
+                    if us.shape() != them.shape() {
+                        return Err(vm.new_runtime_error(format!(
+                            "Attempted to assign shape {:?} to shape {:?}",
+                            them.shape(),
+                            us.shape(),
+                        )));
+                    }
+
+                    f(us.view_mut(), them.view())
                 })
             })
         }

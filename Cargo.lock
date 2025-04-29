@@ -878,6 +878,7 @@ dependencies = [
 [[package]]
 name = "ndarray"
 version = "0.16.1"
+source = "git+https://github.com/Masterchef365/ndarray.git?branch=bounds-check#9879a7ac9313892addff992e686f084031cf697a"
 dependencies = [
  "matrixmultiply",
  "num-complex",

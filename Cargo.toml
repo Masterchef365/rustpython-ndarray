@@ -6,8 +6,8 @@ edition = "2021"
 [dependencies]
 rustpython-vm = "0.4.0"
 #ndarray = "0.16.1"
-ndarray = { path = "../ndarray" }
-#ndarray = { git = "https://github.com/Masterchef365/ndarray.git", branch = "bounds-check" }
+#ndarray = { path = "../ndarray" }
+ndarray = { git = "https://github.com/Masterchef365/ndarray.git", branch = "bounds-check" }
 #rustpython-stdlib = "0.4.0"
 
 # For the macros in rustpython-vm

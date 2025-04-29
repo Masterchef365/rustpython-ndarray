@@ -17,7 +17,7 @@ use std::{
 };
 
 pub mod generic_pyndarray;
-use generic_pyndarray::{py_shape_to_rust, SlicedArcArray, DynamicSlice};
+use generic_pyndarray::{py_shape_to_rust, DynamicSlice, SlicedArcArray};
 
 pub fn make_module(vm: &VirtualMachine) -> PyRef<PyModule> {
     let module = pyndarray::make_module(vm);
@@ -45,7 +45,7 @@ pub mod pyndarray {
     use super::*;
     use builtins::{PyFloat, PyIntRef, PyStrRef};
     use function::{KwArgs, OptionalArg};
-    use generic_pyndarray::{pyint_to_isize, py_index_to_sliceinfo};
+    use generic_pyndarray::{py_index_to_sliceinfo, pyint_to_isize};
     use rustpython_vm::types::{AsMapping, AsNumber};
     use rustpython_vm::*;
 
@@ -117,12 +117,10 @@ pub mod pyndarray {
                 }
 
                 #[pymethod(magic)]
-                fn add(
-                    zelf: PyRef<Self>,
-                    other: PyObjectRef,
-                    vm: &VirtualMachine,
-                ) -> PyResult {
-                    let inst = $dtype { arr: zelf.arr.sliced_copy() };
+                fn add(zelf: PyRef<Self>, other: PyObjectRef, vm: &VirtualMachine) -> PyResult {
+                    let inst = $dtype {
+                        arr: zelf.arr.sliced_copy(),
+                    };
                     let inst = inst.into_ref(&vm.ctx);
                     $dtype::iadd(inst.clone(), other, vm)?;
                     Ok(inst.into())
@@ -131,24 +129,27 @@ pub mod pyndarray {
 
             impl $dtype {
                 pub fn assign_or_elem_fn<F, G, U>(
-                    &self, 
+                    &self,
                     slice: DynamicSlice,
                     value: PyObjectRef,
-                    vm: &VirtualMachine, 
+                    vm: &VirtualMachine,
                     assign_fn: F,
                     elem_fn: G,
-                    ) -> PyResult<U>
+                ) -> PyResult<U>
                 where
                     F: Fn(ArrayViewMutD<'_, $primitive>, ArrayViewD<'_, $primitive>) -> PyResult<U>,
                     G: Fn(ArrayViewMutD<'_, $primitive>, $primitive) -> PyResult<U>,
                 {
                     if let Some(other_array) = value.downcast_ref::<$dtype>() {
-                        self.arr.assign_fn(slice, other_array.arr.clone(), vm, assign_fn)
+                        self.arr
+                            .assign_fn(slice, other_array.arr.clone(), vm, assign_fn)
                     } else {
                         let value: $primitive = TryFromObject::try_from_object(vm, value)?;
                         self.arr.write(|mut sliced| {
                             if let Err(e) = sliced.bounds_check(&slice) {
-                                return Err(vm.new_runtime_error(format!("Slice out of bounds; {e}")));
+                                return Err(
+                                    vm.new_runtime_error(format!("Slice out of bounds; {e}"))
+                                );
                             }
 
                             elem_fn(sliced.slice_mut(&slice), value)
@@ -190,11 +191,19 @@ pub mod pyndarray {
                 fn as_number() -> &'static rustpython_vm::protocol::PyNumberMethods {
                     static AS_MAPPING: PyNumberMethods = PyNumberMethods {
                         inplace_add: Some(|a, b, vm| {
-                            $dtype::iadd($dtype::number_downcast_exact(a.to_number(), vm), b.to_owned(), vm);
+                            $dtype::iadd(
+                                $dtype::number_downcast_exact(a.to_number(), vm),
+                                b.to_owned(),
+                                vm,
+                            );
                             Ok(a.to_owned())
                         }),
                         add: Some(|a, b, vm| {
-                            $dtype::add($dtype::number_downcast_exact(a.to_number(), vm), b.to_owned(), vm)
+                            $dtype::add(
+                                $dtype::number_downcast_exact(a.to_number(), vm),
+                                b.to_owned(),
+                                vm,
+                            )
                         }),
                         ..PyNumberMethods::NOT_IMPLEMENTED
                     };
@@ -231,9 +240,9 @@ pub mod pyndarray {
                 ndarray::ArrayD::zeros(shape),
             ))
             .to_pyobject(vm)),
-            None | Some(DataType::Float32) => Ok(PyNdArrayFloat32::from(SlicedArcArray::from_array(
-                ndarray::ArrayD::zeros(shape),
-            ))
+            None | Some(DataType::Float32) => Ok(PyNdArrayFloat32::from(
+                SlicedArcArray::from_array(ndarray::ArrayD::zeros(shape)),
+            )
             .to_pyobject(vm)),
         }
     }
