@@ -72,6 +72,10 @@ impl<T> SlicedArcArray<T> {
             unsliced: self.unsliced.clone(),
         }
     }
+
+    pub fn ndim(&self) -> usize {
+        self.read(|sliced| sliced.ndim())
+    }
 }
 
 impl<T: Display> SlicedArcArray<T>

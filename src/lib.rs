@@ -46,7 +46,7 @@ pub mod pyndarray {
     use builtins::{PyFloat, PyIntRef, PyStrRef};
     use function::{KwArgs, OptionalArg};
     use generic_pyndarray::{pyint_to_isize, py_index_to_sliceinfo};
-    use rustpython_vm::types::AsMapping;
+    use rustpython_vm::types::{AsMapping, AsNumber};
     use rustpython_vm::*;
 
     macro_rules! build_pyarray {
@@ -66,7 +66,7 @@ pub mod pyndarray {
             }
 
             //#[pyclass]
-            #[pyclass(with(AsMapping))]
+            #[pyclass(with(AsMapping, AsNumber))]
             impl $dtype {
                 #[pymethod(magic)]
                 fn getitem(&self, needle: PyObjectRef, vm: &VirtualMachine) -> PyResult {
@@ -98,6 +98,24 @@ pub mod pyndarray {
                 fn repr(zelf: PyRef<Self>, vm: &VirtualMachine) -> PyResult<PyStrRef> {
                     Ok(vm.ctx.new_str(zelf.arr.repr()))
                 }
+
+                #[pymethod(magic)]
+                fn iadd(
+                    zelf: PyRef<Self>,
+                    other: PyObjectRef,
+                    vm: &VirtualMachine,
+                ) -> PyResult<()> {
+                    let n = zelf.arr.ndim();
+                    zelf.assign_or_elem_fn(
+                        ndarray::s![],
+                        value,
+                        vm,
+                        |mut dest, src| Ok(dest.assign(&src)),
+                        |mut dest, value| Ok(dest.fill(value)),
+                    )
+                }
+
+
             }
 
             impl $dtype {
