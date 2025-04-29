@@ -120,7 +120,8 @@ pub mod pyndarray {
             }
 
             impl $dtype {
-                pub fn assign_or_elem_fn<F, G, U>(&self, 
+                pub fn assign_or_elem_fn<F, G, U>(
+                    &self, 
                     slice: DynamicSlice,
                     value: PyObjectRef,
                     vm: &VirtualMachine, 
@@ -136,6 +137,10 @@ pub mod pyndarray {
                     } else {
                         let value: $primitive = TryFromObject::try_from_object(vm, value)?;
                         self.arr.write(|mut sliced| {
+                            if let Err(e) = sliced.bounds_check(&slice) {
+                                return Err(vm.new_runtime_error(format!("Slice out of bounds; {e}")));
+                            }
+
                             elem_fn(sliced, value)
                         })
                     }
