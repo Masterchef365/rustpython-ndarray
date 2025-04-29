@@ -116,7 +116,17 @@ pub mod pyndarray {
                     )
                 }
 
-
+                #[pymethod(magic)]
+                fn add(
+                    zelf: PyRef<Self>,
+                    other: PyObjectRef,
+                    vm: &VirtualMachine,
+                ) -> PyResult {
+                    let inst = $dtype { arr: zelf.arr.sliced_copy() };
+                    let inst = inst.into_ref(&vm.ctx);
+                    $dtype::iadd(inst.clone(), other, vm)?;
+                    Ok(inst.into())
+                }
             }
 
             impl $dtype {
@@ -182,6 +192,9 @@ pub mod pyndarray {
                         inplace_add: Some(|a, b, vm| {
                             $dtype::iadd($dtype::number_downcast_exact(a.to_number(), vm), b.to_owned(), vm);
                             Ok(a.to_owned())
+                        }),
+                        add: Some(|a, b, vm| {
+                            $dtype::add($dtype::number_downcast_exact(a.to_number(), vm), b.to_owned(), vm)
                         }),
                         ..PyNumberMethods::NOT_IMPLEMENTED
                     };

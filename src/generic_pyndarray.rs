@@ -72,6 +72,14 @@ impl<T> SlicedArcArray<T> {
     }
 }
 
+impl<T: Clone> SlicedArcArray<T> {
+    pub fn sliced_copy(&self) -> Self {
+        self.read(|sliced| {
+            Self::from_array(sliced.to_owned())
+        })
+    }
+}
+
 impl<T: Display> SlicedArcArray<T>
 where
     SlicedArcArray<T>: GenericArray,
