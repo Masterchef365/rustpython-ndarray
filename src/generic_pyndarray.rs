@@ -36,10 +36,7 @@ impl<T> SlicedArcArray<T> {
     pub fn read<U>(&self, mut readfn: impl FnMut(ArrayViewD<'_, T>) -> U) -> U {
         let arr = self.unsliced.read().unwrap();
 
-        let default_slice = vec![SliceInfoElem::from(..); arr.ndim()];
-        let default_slice = DynamicSlice::try_from(default_slice).unwrap();
-
-        let mut arr_slice = arr.slice(default_slice);
+        let mut arr_slice = arr.view();
 
         for slice in &self.slices {
             arr_slice = arr_slice.slice_move(slice);
@@ -52,10 +49,7 @@ impl<T> SlicedArcArray<T> {
     pub fn write<U>(&self, writefn: impl Fn(ArrayViewMutD<'_, T>) -> U) -> U {
         let mut arr = self.unsliced.write().unwrap();
 
-        let default_slice = vec![SliceInfoElem::from(..); arr.ndim()];
-        let default_slice = DynamicSlice::try_from(default_slice).unwrap();
-
-        let mut arr_slice = arr.slice_mut(default_slice);
+        let mut arr_slice = arr.view_mut();
 
         for slice in &self.slices {
             arr_slice = arr_slice.slice_move(slice);
