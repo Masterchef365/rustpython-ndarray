@@ -74,7 +74,10 @@ impl<T> SlicedArcArray<T> {
     }
 }
 
-impl<T: Display> SlicedArcArray<T> where SlicedArcArray<T>: GenericArray {
+impl<T: Display> SlicedArcArray<T>
+where
+    SlicedArcArray<T>: GenericArray,
+{
     pub fn repr(&self) -> String {
         format!("array({}, dtype='{}')", self, Self::DTYPE.stringy_key())
     }
@@ -109,12 +112,7 @@ where
     SlicedArcArray<T>: GenericArray,
 {
     /// Fills the slice `needle` with `value` (casted to T)
-    pub fn fill(
-        &self,
-        needle: DynamicSlice,
-        value: T,
-        vm: &VirtualMachine,
-    ) -> PyResult<()> {
+    pub fn fill(&self, needle: DynamicSlice, value: T, vm: &VirtualMachine) -> PyResult<()> {
         self.write(|mut sliced| {
             if let Err(e) = sliced.bounds_check(&needle) {
                 return Err(vm.new_runtime_error(format!("Slice out of bounds; {e}")));
@@ -135,36 +133,36 @@ where
         value: SlicedArcArray<T>,
         vm: &VirtualMachine,
     ) -> PyResult<()> {
+        self.assign_fn(needle, value, vm, |mut dest, src| Ok(dest.assign(&src)))
+    }
 
+    fn assign_fn<F, U>(&self, slice: DynamicSlice, other: SlicedArcArray<T>, vm: &VirtualMachine, f: F) -> PyResult<U>
+    where
+        F: Fn(ArrayViewMutD<'_, T>, ArrayViewD<'_, T>) -> PyResult<U>,
+    {
         // Check if we're copying from a slice of ourself ...
-        if Arc::ptr_eq(&self.unsliced, &value.unsliced) {
+        if Arc::ptr_eq(&self.unsliced, &other.unsliced) {
             // TODO: THIS IS MEMORY INTENSIVE AND SLOW!!
-            let copied = value.read(|mut us| {
-                us.to_owned()
-            });
+            let copied = other.read(|mut us| us.to_owned());
             self.write(|mut other_us| {
-                if let Err(e) = other_us.bounds_check(&needle) {
+                if let Err(e) = other_us.bounds_check(&slice) {
                     return Err(vm.new_runtime_error(format!("Slice out of bounds; {e}")));
                 }
 
-                other_us.slice_mut(&needle).assign(&copied);
-
-                Ok(())
+                let other_us = other_us.slice_mut(&slice);
+                f(other_us, copied.view())
             })
-
         } else {
             self.write(|mut us| {
-                if let Err(e) = us.bounds_check(&needle) {
+                if let Err(e) = us.bounds_check(&slice) {
                     return Err(vm.new_runtime_error(format!("Slice out of bounds; {e}")));
                 }
 
-                value.read(|mut them| {
-                    us.slice_mut(&needle).assign(&them);
-                });
-
-                Ok(())
+                other.read(|mut them| {
+                    let us = us.slice_mut(&slice);
+                    f(us, them.view())
+                })
             })
-
         }
     }
 }
