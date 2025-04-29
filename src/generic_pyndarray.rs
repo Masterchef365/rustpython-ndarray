@@ -58,13 +58,18 @@ impl<T> SlicedArcArray<T> {
         writefn(arr_slice)
     }
 
-    pub fn append_slice(&self, slice: DynamicSlice) -> Self {
+    pub fn append_slice(&self, slice: DynamicSlice) -> Result<Self, String> {
+        let check = self.read(|sliced| {
+            sliced.bounds_check(&slice)
+        })?;
+
         let mut slices = self.slices.clone();
         slices.push(slice);
-        Self {
+
+        Ok(Self {
             slices,
             unsliced: self.unsliced.clone(),
-        }
+        })
     }
 
     pub fn ndim(&self) -> usize {
@@ -107,7 +112,10 @@ impl<T: ToPyObject + Copy> SlicedArcArray<T> {
             if sliced.ndim() == 0 {
                 Ok(sliced.get([]).copied().unwrap().to_pyobject(vm))
             } else {
-                Ok(self.append_slice(last_slice.clone()).cast().to_pyobject(vm))
+                let new_array = self.append_slice(last_slice.clone()).map_err(|e| {
+                    vm.new_runtime_error(format!("Slice out of bounds; {e}"))
+                })?;
+                Ok(new_array.cast().to_pyobject(vm))
             }
         })
     }
