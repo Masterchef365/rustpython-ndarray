@@ -17,7 +17,7 @@ use std::{
 };
 
 pub mod generic_pyndarray;
-use generic_pyndarray::{py_shape_to_rust, SlicedArcArray};
+use generic_pyndarray::{py_shape_to_rust, SlicedArcArray, DynamicSlice};
 
 pub fn make_module(vm: &VirtualMachine) -> PyRef<PyModule> {
     let module = pyndarray::make_module(vm);
@@ -80,14 +80,13 @@ pub mod pyndarray {
                     value: PyObjectRef,
                     vm: &VirtualMachine,
                 ) -> PyResult<()> {
-                    let last_slice = py_index_to_sliceinfo(needle, vm)?;
-
-                    if let Some(other_array) = value.downcast_ref::<$dtype>() {
-                        self.arr.assign_fn(last_slice, other_array.arr.clone(), vm, |mut dest, src| Ok(dest.assign(&src)))
-                    } else {
-                        let value: $primitive = TryFromObject::try_from_object(vm, value)?;
-                        self.arr.fill(last_slice, value, vm)
-                    }
+                    self.assign_or_elem_fn(
+                        needle,
+                        value,
+                        vm,
+                        |mut dest, src| Ok(dest.assign(&src)),
+                        |mut dest, value| Ok(dest.fill(value)),
+                    )
                 }
 
                 #[pymethod(magic)]
@@ -98,6 +97,31 @@ pub mod pyndarray {
                 #[pymethod(magic)]
                 fn repr(zelf: PyRef<Self>, vm: &VirtualMachine) -> PyResult<PyStrRef> {
                     Ok(vm.ctx.new_str(zelf.arr.repr()))
+                }
+            }
+
+            impl $dtype {
+                pub fn assign_or_elem_fn<F, G, U>(&self, 
+                    needle: PyObjectRef,
+                    value: PyObjectRef,
+                    vm: &VirtualMachine, 
+                    assign_fn: F,
+                    elem_fn: G,
+                    ) -> PyResult<U>
+                where
+                    F: Fn(ArrayViewMutD<'_, $primitive>, ArrayViewD<'_, $primitive>) -> PyResult<U>,
+                    G: Fn(ArrayViewMutD<'_, $primitive>, $primitive) -> PyResult<U>,
+                {
+                    let last_slice = py_index_to_sliceinfo(needle, vm)?;
+
+                    if let Some(other_array) = value.downcast_ref::<$dtype>() {
+                        self.arr.assign_fn(last_slice, other_array.arr.clone(), vm, assign_fn)
+                    } else {
+                        let value: $primitive = TryFromObject::try_from_object(vm, value)?;
+                        self.arr.write(|mut sliced| {
+                            elem_fn(sliced, value)
+                        })
+                    }
                 }
             }
 
