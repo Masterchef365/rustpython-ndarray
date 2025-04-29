@@ -126,6 +126,7 @@ where
         })
     }
 
+    /*
     /// Fills the slice `needle` with `value` (casted to T)
     pub fn set_array(
         &self,
@@ -133,10 +134,10 @@ where
         value: SlicedArcArray<T>,
         vm: &VirtualMachine,
     ) -> PyResult<()> {
-        self.assign_fn(needle, value, vm, |mut dest, src| Ok(dest.assign(&src)))
     }
+    */
 
-    fn assign_fn<F, U>(&self, slice: DynamicSlice, other: SlicedArcArray<T>, vm: &VirtualMachine, f: F) -> PyResult<U>
+    pub fn assign_fn<F, U>(&self, slice: DynamicSlice, other: SlicedArcArray<T>, vm: &VirtualMachine, f: F) -> PyResult<U>
     where
         F: Fn(ArrayViewMutD<'_, T>, ArrayViewD<'_, T>) -> PyResult<U>,
     {

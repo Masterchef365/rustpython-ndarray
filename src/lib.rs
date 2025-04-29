@@ -83,7 +83,7 @@ pub mod pyndarray {
                     let last_slice = py_index_to_sliceinfo(needle, vm)?;
 
                     if let Some(other_array) = value.downcast_ref::<$dtype>() {
-                        self.arr.set_array(last_slice, other_array.arr.clone(), vm)
+                        self.arr.assign_fn(last_slice, other_array.arr.clone(), vm, |mut dest, src| Ok(dest.assign(&src)))
                     } else {
                         let value: $primitive = TryFromObject::try_from_object(vm, value)?;
                         self.arr.fill(last_slice, value, vm)
