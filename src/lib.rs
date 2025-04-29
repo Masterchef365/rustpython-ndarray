@@ -141,7 +141,7 @@ pub mod pyndarray {
                                 return Err(vm.new_runtime_error(format!("Slice out of bounds; {e}")));
                             }
 
-                            elem_fn(sliced, value)
+                            elem_fn(sliced.slice_mut(&slice), value)
                         })
                     }
                 }
