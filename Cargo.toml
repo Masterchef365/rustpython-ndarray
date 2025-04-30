@@ -18,5 +18,5 @@ num-traits = "0.2.19"
 rustpython = "0.4.0"
 
 [patch.crates-io]
-rustpython-vm = { git = "https://github.com/RustPython/RustPython.git", branch = "main" }
-rustpython = { git = "https://github.com/RustPython/RustPython.git", branch = "main" }
+rustpython-vm = { git = "https://github.com/RustPython/RustPython.git", rev = "2ccc7455133be258776e14d90fc933daa40cd6e3" }
+rustpython = { git = "https://github.com/RustPython/RustPython.git", rev = "2ccc7455133be258776e14d90fc933daa40cd6e3" }
