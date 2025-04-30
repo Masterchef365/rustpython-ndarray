@@ -135,8 +135,6 @@ pub mod pyndarray {
                 where
                     F: Fn(ArrayViewMutD<'_, $primitive>, ArrayViewD<'_, $primitive>) -> PyResult<U>,
                     G: Fn(ArrayViewMutD<'_, $primitive>, $primitive) -> PyResult<U>,
-
-                    U: std::fmt::Debug // DELET THIS
                 {
                     if let Some(other_array) = value.downcast_ref::<$dtype>() {
                         self.arr
