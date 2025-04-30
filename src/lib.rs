@@ -11,7 +11,6 @@ use rustpython_vm::{
     PyObject, PyObjectRef, PyRef, PyResult, TryFromObject, VirtualMachine,
 };
 
-
 pub mod generic_pyndarray;
 use generic_pyndarray::{py_shape_to_rust, DynamicSlice, SlicedArcArray};
 
@@ -152,7 +151,7 @@ pub mod pyndarray {
                 }
 
                 #[pymethod(magic)]
-                fn idiv(
+                fn itruediv(
                     zelf: PyRef<Self>,
                     other: PyObjectRef,
                     vm: &VirtualMachine,
@@ -168,12 +167,12 @@ pub mod pyndarray {
                 }
 
                 #[pymethod(magic)]
-                fn div(zelf: PyRef<Self>, other: PyObjectRef, vm: &VirtualMachine) -> PyResult {
+                fn truediv(zelf: PyRef<Self>, other: PyObjectRef, vm: &VirtualMachine) -> PyResult {
                     let inst = $dtype {
                         arr: zelf.arr.sliced_copy(),
                     };
                     let inst = inst.into_ref(&vm.ctx);
-                    $dtype::idiv(inst.clone(), other, vm)?;
+                    $dtype::itruediv(inst.clone(), other, vm)?;
                     Ok(inst.into())
                 }
 
@@ -202,8 +201,6 @@ pub mod pyndarray {
                     $dtype::imul(inst.clone(), other, vm)?;
                     Ok(inst.into())
                 }
-
-
             }
 
             impl $dtype {
@@ -216,8 +213,16 @@ pub mod pyndarray {
                     elem_fn: G,
                 ) -> PyResult<U>
                 where
-                    F: Fn(ArrayViewMutD<'_, $primitive>, ArrayViewD<'_, $primitive>, &VirtualMachine) -> PyResult<U>,
-                    G: Fn(ArrayViewMutD<'_, $primitive>, $primitive, &VirtualMachine) -> PyResult<U>,
+                    F: Fn(
+                        ArrayViewMutD<'_, $primitive>,
+                        ArrayViewD<'_, $primitive>,
+                        &VirtualMachine,
+                    ) -> PyResult<U>,
+                    G: Fn(
+                        ArrayViewMutD<'_, $primitive>,
+                        $primitive,
+                        &VirtualMachine,
+                    ) -> PyResult<U>,
                 {
                     if let Some(other_array) = value.downcast_ref::<$dtype>() {
                         self.arr
@@ -284,6 +289,55 @@ pub mod pyndarray {
                                 vm,
                             )
                         }),
+
+                        inplace_multiply: Some(|a, b, vm| {
+                            $dtype::imul(
+                                $dtype::number_downcast_exact(a.to_number(), vm),
+                                b.to_owned(),
+                                vm,
+                            )?;
+                            Ok(a.to_owned())
+                        }),
+                        multiply: Some(|a, b, vm| {
+                            $dtype::mul(
+                                $dtype::number_downcast_exact(a.to_number(), vm),
+                                b.to_owned(),
+                                vm,
+                            )
+                        }),
+
+                        inplace_true_divide: Some(|a, b, vm| {
+                            $dtype::itruediv(
+                                $dtype::number_downcast_exact(a.to_number(), vm),
+                                b.to_owned(),
+                                vm,
+                            )?;
+                            Ok(a.to_owned())
+                        }),
+                        true_divide: Some(|a, b, vm| {
+                            $dtype::truediv(
+                                $dtype::number_downcast_exact(a.to_number(), vm),
+                                b.to_owned(),
+                                vm,
+                            )
+                        }),
+
+                        inplace_subtract: Some(|a, b, vm| {
+                            $dtype::isub(
+                                $dtype::number_downcast_exact(a.to_number(), vm),
+                                b.to_owned(),
+                                vm,
+                            )?;
+                            Ok(a.to_owned())
+                        }),
+                        subtract: Some(|a, b, vm| {
+                            $dtype::sub(
+                                $dtype::number_downcast_exact(a.to_number(), vm),
+                                b.to_owned(),
+                                vm,
+                            )
+                        }),
+
                         ..PyNumberMethods::NOT_IMPLEMENTED
                     };
                     &AS_MAPPING
