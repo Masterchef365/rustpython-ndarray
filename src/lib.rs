@@ -81,8 +81,8 @@ pub mod pyndarray {
                         slice,
                         value,
                         vm,
-                        |mut dest, src| Ok(dest.assign(&src)),
-                        |mut dest, value| Ok(dest.fill(value)),
+                        |mut dest, src, _| Ok(dest.assign(&src)),
+                        |mut dest, value, _| Ok(dest.fill(value)),
                     )
                 }
 
@@ -107,8 +107,8 @@ pub mod pyndarray {
                         empty_slice,
                         other,
                         vm,
-                        |mut dest, src| Ok(dest += &src),
-                        |mut dest, value| Ok(dest += value),
+                        |mut dest, src, _vm| Ok(dest += &src),
+                        |mut dest, value, _vm| Ok(dest += value),
                     )
                 }
 
@@ -133,8 +133,8 @@ pub mod pyndarray {
                     elem_fn: G,
                 ) -> PyResult<U>
                 where
-                    F: Fn(ArrayViewMutD<'_, $primitive>, ArrayViewD<'_, $primitive>) -> PyResult<U>,
-                    G: Fn(ArrayViewMutD<'_, $primitive>, $primitive) -> PyResult<U>,
+                    F: Fn(ArrayViewMutD<'_, $primitive>, ArrayViewD<'_, $primitive>, &VirtualMachine) -> PyResult<U>,
+                    G: Fn(ArrayViewMutD<'_, $primitive>, $primitive, &VirtualMachine) -> PyResult<U>,
                 {
                     if let Some(other_array) = value.downcast_ref::<$dtype>() {
                         self.arr
@@ -148,7 +148,7 @@ pub mod pyndarray {
                                 );
                             }
 
-                            elem_fn(sliced.slice_mut(&slice), value)
+                            elem_fn(sliced.slice_mut(&slice), value, vm)
                         })
                     }
                 }

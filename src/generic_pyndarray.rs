@@ -143,8 +143,7 @@ where
 
     pub fn assign_fn<F, U>(&self, slice: DynamicSlice, other: SlicedArcArray<T>, vm: &VirtualMachine, f: F) -> PyResult<U>
     where
-        F: Fn(ArrayViewMutD<'_, T>, ArrayViewD<'_, T>) -> PyResult<U>,
-        T: std::fmt::Debug
+        F: Fn(ArrayViewMutD<'_, T>, ArrayViewD<'_, T>, &VirtualMachine) -> PyResult<U>,
     {
         // Check if we're copying from a slice of ourself ...
         if Arc::ptr_eq(&self.unsliced, &other.unsliced) {
@@ -159,7 +158,7 @@ where
                     )));
                 }
 
-                f(other_us, copied.view())
+                f(other_us, copied.view(), vm)
             })
         } else {
             self.append_slice(slice, vm)?.write(|mut us| {
@@ -172,7 +171,7 @@ where
                         )));
                     }
 
-                    f(us.view_mut(), them.view())
+                    f(us.view_mut(), them.view(), vm)
                 })
             })
         }
