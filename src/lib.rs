@@ -1,9 +1,9 @@
-#![allow(unused)]
+//#![allow(unused)]
 
-use ndarray::{ArrayViewD, ArrayViewMutD, IxDyn, SliceInfo, SliceInfoElem};
+use ndarray::{ArrayViewD, ArrayViewMutD, SliceInfoElem};
 use rustpython_vm::{
     atomic_func,
-    builtins::{PyInt, PyModule, PySlice, PyStr, PyTuple},
+    builtins::{PyModule, PyStr},
     class::PyClassImpl,
     convert::ToPyObject,
     object::PyObjectPayload,
@@ -11,10 +11,6 @@ use rustpython_vm::{
     PyObject, PyObjectRef, PyRef, PyResult, TryFromObject, VirtualMachine,
 };
 
-use std::{
-    fmt::Display,
-    sync::{Arc, RwLock},
-};
 
 pub mod generic_pyndarray;
 use generic_pyndarray::{py_shape_to_rust, DynamicSlice, SlicedArcArray};
@@ -43,9 +39,9 @@ pub trait GenericArray {
 #[rustpython_vm::pymodule]
 pub mod pyndarray {
     use super::*;
-    use builtins::{PyFloat, PyIntRef, PyStrRef};
+    use builtins::{PyFloat, PyStrRef};
     use function::{KwArgs, OptionalArg};
-    use generic_pyndarray::{py_index_to_sliceinfo, pyint_to_isize};
+    use generic_pyndarray::py_index_to_sliceinfo;
     use rustpython_vm::types::{AsMapping, AsNumber};
     use rustpython_vm::*;
 

@@ -1,11 +1,8 @@
 use ndarray::{ArrayViewD, ArrayViewMutD, IxDyn, SliceInfo, SliceInfoElem};
 use rustpython_vm::{
-    atomic_func,
-    builtins::{PyInt, PyModule, PyNone, PySlice, PyStr, PyTuple},
-    class::PyClassImpl,
+    builtins::{PyInt, PyNone, PySlice, PyTuple},
     convert::ToPyObject,
-    protocol::PyMappingMethods,
-    PyObject, PyObjectRef, PyRef, PyResult, TryFromObject, VirtualMachine,
+    PyObject, PyObjectRef, PyResult, TryFromObject, VirtualMachine,
 };
 
 use std::{
@@ -59,11 +56,11 @@ impl<T> SlicedArcArray<T> {
     }
 
     pub fn append_slice(&self, slice: DynamicSlice, vm: &VirtualMachine) -> PyResult<Self> {
-        let check = self.read(|sliced| {
+        if let Err(e) = self.read(|sliced| {
             sliced.bounds_check(&slice)
-        }).map_err(|e| {
-            vm.new_runtime_error(format!("Slice out of bounds; {e}"))
-        })?;
+        }) {
+            return Err(vm.new_runtime_error(format!("Slice out of bounds; {e}")));
+        }
 
         let mut slices = self.slices.clone();
         slices.push(slice);
@@ -152,8 +149,8 @@ where
         // Check if we're copying from a slice of ourself ...
         if Arc::ptr_eq(&self.unsliced, &other.unsliced) {
             // TODO: THIS IS MEMORY INTENSIVE AND SLOW!!
-            let copied = other.read(|mut us| us.to_owned());
-            self.append_slice(slice, vm)?.write(|mut other_us| {
+            let copied = other.read(|us| us.to_owned());
+            self.append_slice(slice, vm)?.write(|other_us| {
                 if other_us.shape() != copied.shape() {
                     return Err(vm.new_runtime_error(format!(
                         "Attempted to assign shape {:?} to shape {:?}",
@@ -166,7 +163,7 @@ where
             })
         } else {
             self.append_slice(slice, vm)?.write(|mut us| {
-                other.read(|mut them| {
+                other.read(|them| {
                     if us.shape() != them.shape() {
                         return Err(vm.new_runtime_error(format!(
                             "Attempted to assign shape {:?} to shape {:?}",
