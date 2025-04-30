@@ -38,7 +38,7 @@ pub trait GenericArray {
 #[rustpython_vm::pymodule]
 pub mod pyndarray {
     use super::*;
-    use builtins::{PyFloat, PyStrRef};
+    use builtins::{PyFloat, PyInt, PyStrRef};
     use function::{KwArgs, OptionalArg};
     use generic_pyndarray::py_index_to_sliceinfo;
     use rustpython_vm::types::{AsMapping, AsNumber};
@@ -84,6 +84,15 @@ pub mod pyndarray {
                         |mut dest, src, _| Ok(dest.assign(&src)),
                         |mut dest, value, _| Ok(dest.fill(value)),
                     )
+                }
+
+                #[pymethod(magic)]
+                fn len(
+                    &self,
+                    _vm: &VirtualMachine,
+                ) -> PyResult<PyInt> {
+                    let len = self.arr.read(|sliced| sliced.len());
+                    Ok(len.into())
                 }
 
                 // Stringy methods
@@ -260,11 +269,9 @@ pub mod pyndarray {
                                 ))
                             }
                         }),
-                        length: atomic_func!(|_mapping, vm| {
-                            Err(vm.new_exception_msg(
-                                vm.ctx.exceptions.runtime_error.to_owned(),
-                                "Arrays do not support len()".to_string(),
-                            ))
+                        length: atomic_func!(|mapping, _vm| {
+                            let zelf = $dtype::mapping_downcast(mapping);
+                            Ok(zelf.arr.length())
                         }),
                     };
                     &AS_MAPPING

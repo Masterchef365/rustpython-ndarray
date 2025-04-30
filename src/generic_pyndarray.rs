@@ -78,6 +78,10 @@ impl<T> SlicedArcArray<T> {
     pub fn shape(&self) -> Vec<usize> {
         self.read(|sliced| sliced.shape().to_vec())
     }
+
+    pub fn length(&self) -> usize {
+        self.read(|sliced| sliced.shape().get(0).copied().unwrap_or(1))
+    }
 }
 
 impl<T: Clone> SlicedArcArray<T> {
