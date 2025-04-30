@@ -70,7 +70,7 @@ pub mod pyndarray {
             impl $dtype {
                 #[pymethod(magic)]
                 fn getitem(&self, needle: PyObjectRef, vm: &VirtualMachine) -> PyResult {
-                    dbg!(self.arr.getitem(needle, vm))
+                    self.arr.getitem(needle, vm)
                 }
 
                 #[pymethod(magic)]
@@ -81,13 +81,13 @@ pub mod pyndarray {
                     vm: &VirtualMachine,
                 ) -> PyResult<()> {
                     let slice = py_index_to_sliceinfo(needle, vm)?;
-                    dbg!(self.assign_or_elem_fn(
+                    self.assign_or_elem_fn(
                         slice,
                         value,
                         vm,
                         |mut dest, src| Ok(dest.assign(&src)),
                         |mut dest, value| Ok(dest.fill(value)),
-                    ))
+                    )
                 }
 
                 #[pymethod(magic)]
@@ -143,8 +143,8 @@ pub mod pyndarray {
                     U: std::fmt::Debug // DELET THIS
                 {
                     if let Some(other_array) = value.downcast_ref::<$dtype>() {
-                        dbg!(self.arr
-                            .assign_fn(slice, other_array.arr.clone(), vm, assign_fn))
+                        self.arr
+                            .assign_fn(slice, other_array.arr.clone(), vm, assign_fn)
                     } else {
                         let value: $primitive = TryFromObject::try_from_object(vm, value)?;
                         self.arr.write(|mut sliced| {
@@ -197,7 +197,7 @@ pub mod pyndarray {
                                 $dtype::number_downcast_exact(a.to_number(), vm),
                                 b.to_owned(),
                                 vm,
-                            );
+                            )?;
                             Ok(a.to_owned())
                         }),
                         add: Some(|a, b, vm| {
