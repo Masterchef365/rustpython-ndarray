@@ -64,6 +64,7 @@ pub mod pyndarray {
             //#[pyclass]
             #[pyclass(with(AsMapping, AsNumber))]
             impl $dtype {
+                // AsMapping methods
                 #[pymethod(magic)]
                 fn getitem(&self, needle: PyObjectRef, vm: &VirtualMachine) -> PyResult {
                     self.arr.getitem(needle, vm)
@@ -86,6 +87,7 @@ pub mod pyndarray {
                     )
                 }
 
+                // Stringy methods
                 #[pymethod(magic)]
                 fn str(zelf: PyRef<Self>, vm: &VirtualMachine) -> PyResult<PyStrRef> {
                     Ok(vm.ctx.new_str(zelf.arr.to_string()))
@@ -96,6 +98,7 @@ pub mod pyndarray {
                     Ok(vm.ctx.new_str(zelf.arr.repr()))
                 }
 
+                // AsNumber methods
                 #[pymethod(magic)]
                 fn iadd(
                     zelf: PyRef<Self>,
@@ -121,6 +124,86 @@ pub mod pyndarray {
                     $dtype::iadd(inst.clone(), other, vm)?;
                     Ok(inst.into())
                 }
+
+                #[pymethod(magic)]
+                fn isub(
+                    zelf: PyRef<Self>,
+                    other: PyObjectRef,
+                    vm: &VirtualMachine,
+                ) -> PyResult<()> {
+                    let empty_slice = empty_slice_like(&zelf.arr);
+                    zelf.assign_or_elem_fn(
+                        empty_slice,
+                        other,
+                        vm,
+                        |mut dest, src, _vm| Ok(dest -= &src),
+                        |mut dest, value, _vm| Ok(dest -= value),
+                    )
+                }
+
+                #[pymethod(magic)]
+                fn sub(zelf: PyRef<Self>, other: PyObjectRef, vm: &VirtualMachine) -> PyResult {
+                    let inst = $dtype {
+                        arr: zelf.arr.sliced_copy(),
+                    };
+                    let inst = inst.into_ref(&vm.ctx);
+                    $dtype::isub(inst.clone(), other, vm)?;
+                    Ok(inst.into())
+                }
+
+                #[pymethod(magic)]
+                fn idiv(
+                    zelf: PyRef<Self>,
+                    other: PyObjectRef,
+                    vm: &VirtualMachine,
+                ) -> PyResult<()> {
+                    let empty_slice = empty_slice_like(&zelf.arr);
+                    zelf.assign_or_elem_fn(
+                        empty_slice,
+                        other,
+                        vm,
+                        |mut dest, src, _vm| Ok(dest /= &src),
+                        |mut dest, value, _vm| Ok(dest /= value),
+                    )
+                }
+
+                #[pymethod(magic)]
+                fn div(zelf: PyRef<Self>, other: PyObjectRef, vm: &VirtualMachine) -> PyResult {
+                    let inst = $dtype {
+                        arr: zelf.arr.sliced_copy(),
+                    };
+                    let inst = inst.into_ref(&vm.ctx);
+                    $dtype::idiv(inst.clone(), other, vm)?;
+                    Ok(inst.into())
+                }
+
+                #[pymethod(magic)]
+                fn imul(
+                    zelf: PyRef<Self>,
+                    other: PyObjectRef,
+                    vm: &VirtualMachine,
+                ) -> PyResult<()> {
+                    let empty_slice = empty_slice_like(&zelf.arr);
+                    zelf.assign_or_elem_fn(
+                        empty_slice,
+                        other,
+                        vm,
+                        |mut dest, src, _vm| Ok(dest *= &src),
+                        |mut dest, value, _vm| Ok(dest *= value),
+                    )
+                }
+
+                #[pymethod(magic)]
+                fn mul(zelf: PyRef<Self>, other: PyObjectRef, vm: &VirtualMachine) -> PyResult {
+                    let inst = $dtype {
+                        arr: zelf.arr.sliced_copy(),
+                    };
+                    let inst = inst.into_ref(&vm.ctx);
+                    $dtype::imul(inst.clone(), other, vm)?;
+                    Ok(inst.into())
+                }
+
+
             }
 
             impl $dtype {
