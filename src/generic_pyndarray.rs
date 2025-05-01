@@ -236,6 +236,10 @@ pub fn py_index_elem_to_sliceinfo_elem(
         });
     }
 
+    if let Some(_) = elem.downcast_ref::<PyNone>() {
+        return Ok(SliceInfoElem::NewAxis);
+    }
+
     Err(vm.new_runtime_error(format!("Unrecognized index {elem:?}")))
 }
 
