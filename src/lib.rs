@@ -49,7 +49,7 @@ pub mod pyndarray {
             #[derive(PyPayload, Clone, Debug)]
             #[pyclass(module = "pyndarray", name)]
             pub struct $dtype {
-                pub(crate) arr: SlicedArcArray<$primitive>,
+                pub arr: SlicedArcArray<$primitive>,
             }
 
             impl GenericArray for SlicedArcArray<$primitive> {
