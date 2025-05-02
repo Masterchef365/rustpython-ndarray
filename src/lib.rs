@@ -353,11 +353,10 @@ pub mod pyndarray {
                 fn as_sequence() -> &'static PySequenceMethods {
                     //static AS_SEQUENCE: PySequenceMethods = PySequenceMethods {
                     static AS_SEQUENCE: LazyLock<PySequenceMethods> = LazyLock::new(|| PySequenceMethods {
-                        length: atomic_func!(|seq, vm| $dtype::sequence_downcast(seq)
-                            .arr.shape()
-                            .get(0)
-                            .copied()
-                            .ok_or_else(|| vm.new_runtime_error("No length".to_string()))),
+                        length: atomic_func!(|mapping, _vm| {
+                            let zelf = $dtype::sequence_downcast(mapping);
+                            Ok(zelf.arr.length())
+                        }),
                         item: atomic_func!(|seq, i, vm| {
                             $dtype::sequence_downcast(seq)
                                 .getitem(i.to_pyobject(vm), vm)
