@@ -7,9 +7,10 @@ use rustpython_vm::{
     class::PyClassImpl,
     convert::ToPyObject,
     object::PyObjectPayload,
-    protocol::{PyMappingMethods, PyNumberMethods},
+    protocol::{PyMappingMethods, PyNumberMethods, PySequenceMethods},
     PyObject, PyObjectRef, PyRef, PyResult, TryFromObject, VirtualMachine,
 };
+use std::sync::LazyLock;
 
 pub mod generic_pyndarray;
 use generic_pyndarray::{py_shape_to_rust, DynamicSlice, SlicedArcArray};
@@ -41,7 +42,7 @@ pub mod pyndarray {
     use builtins::{PyFloat, PyInt, PyStrRef};
     use function::{KwArgs, OptionalArg};
     use generic_pyndarray::py_index_to_sliceinfo;
-    use rustpython_vm::types::{AsMapping, AsNumber};
+    use rustpython_vm::types::{AsMapping, AsNumber, AsSequence};
     use rustpython_vm::*;
 
     macro_rules! build_pyarray {
@@ -61,7 +62,7 @@ pub mod pyndarray {
             }
 
             //#[pyclass]
-            #[pyclass(with(AsMapping, AsNumber))]
+            #[pyclass(with(AsMapping, AsNumber, AsSequence))]
             impl $dtype {
                 // AsMapping methods
                 #[pymethod(magic)]
@@ -87,10 +88,7 @@ pub mod pyndarray {
                 }
 
                 #[pymethod(magic)]
-                fn len(
-                    &self,
-                    _vm: &VirtualMachine,
-                ) -> PyResult<PyInt> {
+                fn len(&self, _vm: &VirtualMachine) -> PyResult<PyInt> {
                     let len = self.arr.read(|sliced| sliced.len());
                     Ok(len.into())
                 }
@@ -348,6 +346,25 @@ pub mod pyndarray {
                         ..PyNumberMethods::NOT_IMPLEMENTED
                     };
                     &AS_MAPPING
+                }
+            }
+
+            impl AsSequence for $dtype {
+                fn as_sequence() -> &'static PySequenceMethods {
+                    //static AS_SEQUENCE: PySequenceMethods = PySequenceMethods {
+                    static AS_SEQUENCE: LazyLock<PySequenceMethods> = LazyLock::new(|| PySequenceMethods {
+                        length: atomic_func!(|seq, vm| $dtype::sequence_downcast(seq)
+                            .arr.shape()
+                            .get(0)
+                            .copied()
+                            .ok_or_else(|| vm.new_runtime_error("No length".to_string()))),
+                        item: atomic_func!(|seq, i, vm| {
+                            $dtype::sequence_downcast(seq)
+                                .getitem(i.to_pyobject(vm), vm)
+                        }),
+                        ..PySequenceMethods::NOT_IMPLEMENTED
+                    });
+                    &AS_SEQUENCE
                 }
             }
 
