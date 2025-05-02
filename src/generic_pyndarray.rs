@@ -59,7 +59,7 @@ impl<T> SlicedArcArray<T> {
         if let Err(e) = self.read(|sliced| {
             sliced.bounds_check(&slice)
         }) {
-            return Err(vm.new_runtime_error(format!("Slice out of bounds; {e}")));
+            return Err(vm.new_index_error(format!("Slice out of bounds; {e}")));
         }
 
         let mut slices = self.slices.clone();
