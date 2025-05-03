@@ -56,9 +56,7 @@ impl<T> SlicedArcArray<T> {
     }
 
     pub fn append_slice(&self, slice: DynamicSlice, vm: &VirtualMachine) -> PyResult<Self> {
-        if let Err(e) = self.read(|sliced| {
-            sliced.bounds_check(&slice)
-        }) {
+        if let Err(e) = self.read(|sliced| sliced.bounds_check(&slice)) {
             return Err(vm.new_index_error(format!("Slice out of bounds; {e}")));
         }
 
@@ -86,9 +84,7 @@ impl<T> SlicedArcArray<T> {
 
 impl<T: Clone> SlicedArcArray<T> {
     pub fn sliced_copy(&self) -> Self {
-        self.read(|sliced| {
-            Self::from_array(sliced.to_owned())
-        })
+        self.read(|sliced| Self::from_array(sliced.to_owned()))
     }
 }
 
@@ -145,7 +141,13 @@ where
     }
     */
 
-    pub fn assign_fn<F, U>(&self, slice: DynamicSlice, other: SlicedArcArray<T>, vm: &VirtualMachine, f: F) -> PyResult<U>
+    pub fn assign_fn<F, U>(
+        &self,
+        slice: DynamicSlice,
+        other: SlicedArcArray<T>,
+        vm: &VirtualMachine,
+        f: F,
+    ) -> PyResult<U>
     where
         F: Fn(ArrayViewMutD<'_, T>, ArrayViewD<'_, T>, &VirtualMachine) -> PyResult<U>,
     {

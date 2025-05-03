@@ -104,6 +104,17 @@ pub mod pyndarray {
                     Ok(vm.ctx.new_str(zelf.arr.repr()))
                 }
 
+                // Copy methods
+                #[pymethod(magic)]
+                fn copy(zelf: PyRef<Self>, vm: &VirtualMachine) -> PyResult {
+                    Ok(Self {
+                        arr: zelf
+                            .arr
+                            .read(|sliced| SlicedArcArray::from_array(sliced.to_owned())),
+                    }
+                    .to_pyobject(vm))
+                }
+
                 // AsNumber methods
                 #[pymethod(magic)]
                 fn iadd(
@@ -352,17 +363,17 @@ pub mod pyndarray {
             impl AsSequence for $dtype {
                 fn as_sequence() -> &'static PySequenceMethods {
                     //static AS_SEQUENCE: PySequenceMethods = PySequenceMethods {
-                    static AS_SEQUENCE: LazyLock<PySequenceMethods> = LazyLock::new(|| PySequenceMethods {
-                        length: atomic_func!(|mapping, _vm| {
-                            let zelf = $dtype::sequence_downcast(mapping);
-                            Ok(zelf.arr.length())
-                        }),
-                        item: atomic_func!(|seq, i, vm| {
-                            $dtype::sequence_downcast(seq)
-                                .getitem(i.to_pyobject(vm), vm)
-                        }),
-                        ..PySequenceMethods::NOT_IMPLEMENTED
-                    });
+                    static AS_SEQUENCE: LazyLock<PySequenceMethods> =
+                        LazyLock::new(|| PySequenceMethods {
+                            length: atomic_func!(|mapping, _vm| {
+                                let zelf = $dtype::sequence_downcast(mapping);
+                                Ok(zelf.arr.length())
+                            }),
+                            item: atomic_func!(|seq, i, vm| {
+                                $dtype::sequence_downcast(seq).getitem(i.to_pyobject(vm), vm)
+                            }),
+                            ..PySequenceMethods::NOT_IMPLEMENTED
+                        });
                     &AS_SEQUENCE
                 }
             }
