@@ -219,6 +219,11 @@ pub mod pyndarray {
                     $dtype::imul(inst.clone(), other, vm)?;
                     Ok(inst.into())
                 }
+
+                #[pymethod(magic)]
+                fn neg(&self, vm: &VirtualMachine) -> PyResult {
+                    Ok(self.arr.write(|sliced| $dtype { arr: SlicedArcArray::from_array(sliced.to_owned()) }.to_pyobject(vm)))
+                }
             }
 
             impl $dtype {
