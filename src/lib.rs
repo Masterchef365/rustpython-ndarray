@@ -460,6 +460,14 @@ pub mod pyndarray {
             }
         })
     }
+
+    #[pyfunction]
+    fn copy(
+        obj: PyObjectRef,
+        vm: &VirtualMachine,
+    ) -> PyResult {
+        vm.call_special_method(&obj, identifier!(vm, __copy__), ())
+    }
 }
 
 impl DataType {
